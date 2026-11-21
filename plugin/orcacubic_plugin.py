@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.1"
+# version = "0.3.2"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -1042,7 +1042,7 @@ _PAGE_HTML = """<!DOCTYPE html>
         <summary data-i18n="tl_summary">Таймлапс (опционально)</summary>
         <div class="row" style="margin-top:8px; gap:8px;">
           <button id="btnTlStart" class="secondary" style="padding:5px 10px;" data-i18n="btn_tl_start" onclick="startTimelapse()">● Записать таймлапс</button>
-          <button id="btnTlStop" class="danger" style="padding:5px 10px; display:none;" data-i18n="btn_tl_stop" onclick="stopTimelapse()">■ Сохранить таймлапс</button>
+          <button id="btnTlStop" class="danger" style="padding:5px 10px; display:none;" data-i18n="btn_tl_stop" onclick="stopTimelapse(true)">■ Сохранить таймлапс</button>
           <select id="tlInterval" style="flex:0 0 auto; min-width:170px; padding:5px 8px;">
             <option value="2000" data-i18n="tl_2s">Кадр раз в 2с</option>
             <option value="5000" selected data-i18n="tl_5s">Кадр раз в 5с</option>
@@ -1590,12 +1590,14 @@ _PAGE_HTML = """<!DOCTYPE html>
       _captureTimelapseFrame();
       _tlTimer = setInterval(_captureTimelapseFrame, intervalMs);
     }
+    _tlManualStopped = false;
     document.getElementById('btnTlStart').style.display = 'none';
     document.getElementById('btnTlStop').style.display = '';
     document.getElementById('tlInterval').disabled = true;
   }
 
-  function stopTimelapse() {
+  function stopTimelapse(byUser) {
+    if (byUser) _tlManualStopped = true;
     if (_tlTimer) { clearInterval(_tlTimer); _tlTimer = null; }
     if (_tlRecorder && _tlRecorder.state !== 'inactive') {
       try {
@@ -1610,6 +1612,7 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
 
   let _tlAutoEnabled = false;
+  let _tlManualStopped = false;
   let _tlPrevPrinterStatus = '';
   function toggleTimelapseAuto(checked) {
     _tlAutoEnabled = !!checked;
@@ -1816,8 +1819,12 @@ _PAGE_HTML = """<!DOCTYPE html>
       }
     }
 
-    // Auto-start timelapse when print starts (if checkbox enabled & camera video is live)
-    if (_tlAutoEnabled && !_tlRecorder && effStatus === 'printing') {
+    if (effStatus === 'idle') {
+      _tlManualStopped = false;
+    }
+
+    // Auto-start timelapse when print starts (unless user manually stopped it for this print)
+    if (_tlAutoEnabled && !_tlRecorder && !_tlManualStopped && effStatus === 'printing') {
       const vid = document.getElementById('camVideo');
       if (vid && vid.videoWidth > 0 && vid.videoHeight > 0) {
         startTimelapse();
