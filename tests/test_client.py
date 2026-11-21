@@ -517,5 +517,54 @@ class TestLoginHelperCDP(unittest.TestCase):
             t.join(timeout=2.0)
 
 
+class TestMqttClient(unittest.TestCase):
+    def test_mqtt_credentials_and_telemetry_parser(self) -> None:
+        from orcacubic.mqtt_client import (
+            _build_connect_packet,
+            _build_subscribe_packet,
+            build_mqtt_credentials,
+            parse_mqtt_telemetry,
+        )
+
+        cid, uname, pwd = build_mqtt_credentials("test_jwt_token_123456", "user@example.com")
+        self.assertTrue(cid.startswith("web_"))
+        self.assertTrue(uname.startswith("user|web|user@example.com|"))
+        self.assertGreater(len(pwd), 300)
+
+        conn_pkt = _build_connect_packet(cid, uname, pwd)
+        self.assertEqual(conn_pkt[0], 0x10)
+        sub_pkt = _build_subscribe_packet(1, ["anycubic/anycubicCloud/v1/+/public/20021/abc/#"])
+        self.assertEqual(sub_pkt[0], 0x82)
+
+        patch = parse_mqtt_telemetry(
+            {
+                "type": "info",
+                "action": "report",
+                "state": "printing",
+                "data": {
+                    "temp": {
+                        "curr_nozzle_temp": 220,
+                        "target_nozzle_temp": 225,
+                        "curr_hotbed_temp": 60,
+                        "target_hotbed_temp": 70,
+                    },
+                    "progress": 42,
+                    "curr_layer": 12,
+                    "total_layers": 100,
+                    "remain_time": 35,
+                },
+            }
+        )
+        self.assertEqual(patch["nozzle_temp"], 220.0)
+        self.assertEqual(patch["target_nozzle_temp"], 225.0)
+        self.assertEqual(patch["bed_temp"], 60.0)
+        self.assertEqual(patch["target_bed_temp"], 70.0)
+        self.assertEqual(patch["status"], "printing")
+        self.assertEqual(patch["progress"], 42)
+        self.assertEqual(patch["current_layer"], 12)
+        self.assertEqual(patch["total_layers"], 100)
+        self.assertEqual(patch["remaining_time_min"], 35)
+
+
 if __name__ == "__main__":
     unittest.main()

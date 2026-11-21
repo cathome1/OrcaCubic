@@ -168,14 +168,17 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
         body={
             "order_id": ORDER_ID_CAMERA_OPEN,
             "printer_id": int(printer_id),
+            "shengwang_rtc_support": True,
         },
     )
     cam_data = cam_resp.get("data") or {}
     tok = cam_data.get("token")
-    if isinstance(tok, str) and (cam_data.get("app_id") or cam_data.get("appId") or cam_data.get("channel")):
+    if isinstance(cam_data.get("shengwang"), dict) or (
+        isinstance(tok, str) and (cam_data.get("app_id") or cam_data.get("appId") or cam_data.get("channel"))
+    ):
         raise AnycubicError(
             "This printer uses the Agora camera protocol (Kobra 3 / S1 newer firmware). "
-            "Printing and telemetry work normally; Agora live camera streaming is planned for a future update."
+            "Printing, live MQTT telemetry, and print controls work normally; Agora live camera streaming is planned for a future update."
         )
     if not isinstance(tok, dict) or "tmpSecretId" not in tok:
         raise AnycubicError(

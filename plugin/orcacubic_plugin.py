@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.2.1"
+# version = "0.3.0"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -70,6 +70,7 @@ from orcacubic.login_helper import (
     launch_login_window,
     pick_folder_dialog,
 )
+from orcacubic.mqtt_client import AnycubicMqttWatcher
 
 _DATA_DIR = _PLUGIN_ROOT / "data"
 _CONFIG_FILE = _DATA_DIR / "config.json"
@@ -1995,7 +1996,19 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         self._updated_at: str = ""
         self._cloud_files: List[Dict[str, Any]] = []
         self._cloud_storage: Dict[str, Any] = {}
+        self._mqtt = AnycubicMqttWatcher(on_telemetry=self._on_mqtt_telemetry)
         _ACTIVE_PAGE = self
+
+    def _on_mqtt_telemetry(self, printer_id: int, patch: Dict[str, Any]) -> None:
+        updated = False
+        for item in self._printers:
+            if item.get("printer_id") == printer_id:
+                item.update(patch)
+                updated = True
+                break
+        if updated:
+            self._updated_at = datetime.datetime.now().strftime("%H:%M:%S")
+            self._emit_state()
 
     def trigger_files_refresh(self, notice: str = "") -> None:
         cfg = load_config(path=_CONFIG_FILE)
@@ -2062,6 +2075,16 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             printers = client.get_printers_with_live_status()
             self._printers = [p.to_dict() for p in printers]
             self._updated_at = datetime.datetime.now().strftime("%H:%M:%S")
+            mqtt_targets = [
+                (p.printer_id, p.machine_type, p.printer_key)
+                for p in printers
+                if p.machine_type and p.printer_key
+            ]
+            self._mqtt.configure(
+                token=cfg.token,
+                email=str(self._user.get("email") or ""),
+                targets=mqtt_targets,
+            )
             if _ACTIVE_AGENT is not None and printers:
                 _ACTIVE_AGENT.announce_printers(printers)
             if cfg.printer_id is None and printers:
@@ -2467,7 +2490,7 @@ class OrcaCubicPlugin(orca.base):
                 "*.aliyuncs.com",
                 "127.0.0.1",
             ],
-            network_socket=["127.0.0.1"],
+            network_socket=["127.0.0.1", "mqtt-universe.anycubic.com"],
             process=process_grants,
             threading=True,
         )

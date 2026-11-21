@@ -68,6 +68,8 @@ class PrinterSummary:
     total_layers: int = 0
     project_id: int = 0
     firmware_version: str = ""
+    printer_key: str = ""
+    machine_type: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -88,6 +90,8 @@ class PrinterSummary:
             "total_layers": self.total_layers,
             "project_id": self.project_id,
             "firmware_version": self.firmware_version,
+            "printer_key": self.printer_key,
+            "machine_type": self.machine_type,
         }
 
 
@@ -288,6 +292,8 @@ def _normalize_printer(raw: Dict[str, Any]) -> PrinterSummary:
         total_layers=max(0, total_layers),
         project_id=project_id,
         firmware_version=firmware_version,
+        printer_key=str(raw.get("key") or raw.get("printer_key") or "").strip(),
+        machine_type=str(raw.get("machine_type") or "").strip(),
     )
 
 
@@ -330,6 +336,9 @@ class _ChunkedFileReader:
 
     def close(self) -> None:
         self._fp.close()
+
+
+_SLICE_TEMP_CACHE: Dict[Tuple[int, int], Tuple[Optional[float], Optional[float]]] = {}
 
 
 class AnycubicCloudClient:
@@ -447,7 +456,50 @@ class AnycubicCloudClient:
         data = resp.get("data")
         if not isinstance(data, dict):
             raise AnycubicError(f"Принтер #{printer_id} не найден в Anycubic Cloud.")
-        return _normalize_printer(data)
+        summary = _normalize_printer(data)
+        if (
+            summary.status in ("printing", "paused")
+            and (summary.target_nozzle_temp is None or summary.target_bed_temp is None)
+        ):
+            cache_key = (int(printer_id), int(summary.project_id))
+            cached_temps = _SLICE_TEMP_CACHE.get(cache_key)
+            if cached_temps is None:
+                t_noz, t_bed = self._fetch_active_slice_temps(int(printer_id))
+                if t_noz is not None or t_bed is not None:
+                    _SLICE_TEMP_CACHE[cache_key] = (t_noz, t_bed)
+                    cached_temps = (t_noz, t_bed)
+            if cached_temps is not None:
+                if summary.target_nozzle_temp is None and cached_temps[0] is not None:
+                    summary.target_nozzle_temp = cached_temps[0]
+                if summary.target_bed_temp is None and cached_temps[1] is not None:
+                    summary.target_bed_temp = cached_temps[1]
+        return summary
+
+    def _fetch_active_slice_temps(
+        self, printer_id: int
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Read target nozzle/bed temps from active project's slice_param (REST fallback)."""
+        try:
+            resp = self._request_json(
+                "GET",
+                EP_GET_PROJECTS,
+                query={"printer_id": str(printer_id), "print_status": "1", "limit": "1"},
+            )
+            items = resp.get("data")
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    sp = item.get("slice_param")
+                    if isinstance(sp, str) and sp.startswith("{"):
+                        sp = json.loads(sp)
+                    if isinstance(sp, dict):
+                        t_noz = _to_float(sp.get("temperature") or sp.get("nozzle_temperature"))
+                        t_bed = _to_float(sp.get("bed_temperature") or sp.get("hotbed_temperature"))
+                        return t_noz, t_bed
+        except Exception:
+            pass
+        return None, None
 
     def get_printers_with_live_status(self) -> List[PrinterSummary]:
         """Fetch printers list and enrich each with live /v2/printer/info status."""
