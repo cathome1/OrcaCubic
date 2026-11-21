@@ -1542,11 +1542,15 @@ _PAGE_HTML = """<!DOCTYPE html>
       ? formatEta(p.remaining_time_min)
       : '—';
     const nt = p.nozzle_temp !== null && p.nozzle_temp !== undefined ? Math.round(p.nozzle_temp) : null;
-    const tnt = p.target_nozzle_temp !== null && p.target_nozzle_temp !== undefined ? Math.round(p.target_nozzle_temp) : 0;
-    document.getElementById('statNozzle').textContent = nt !== null ? (nt + ' / ' + tnt + ' °C') : '—';
+    const tnt = p.target_nozzle_temp !== null && p.target_nozzle_temp !== undefined ? Math.round(p.target_nozzle_temp) : null;
+    document.getElementById('statNozzle').textContent = nt !== null
+      ? (tnt !== null ? (nt + ' / ' + tnt + ' °C') : (nt + ' °C'))
+      : '—';
     const bt = p.bed_temp !== null && p.bed_temp !== undefined ? Math.round(p.bed_temp) : null;
-    const tbt = p.target_bed_temp !== null && p.target_bed_temp !== undefined ? Math.round(p.target_bed_temp) : 0;
-    document.getElementById('statBed').textContent = bt !== null ? (bt + ' / ' + tbt + ' °C') : '—';
+    const tbt = p.target_bed_temp !== null && p.target_bed_temp !== undefined ? Math.round(p.target_bed_temp) : null;
+    document.getElementById('statBed').textContent = bt !== null
+      ? (tbt !== null ? (bt + ' / ' + tbt + ' °C') : (bt + ' °C'))
+      : '—';
 
     const activeJob = p.status === 'printing' || p.status === 'paused';
     document.getElementById('btnPause').style.display = p.status === 'printing' ? '' : 'none';
