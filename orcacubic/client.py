@@ -1,4 +1,4 @@
-"""Stdlib-only Anycubic Cloud REST API client for Kobra 2 Pro."""
+"""Stdlib-only Anycubic Cloud REST API client for Anycubic FDM printers (Kobra 2/3/S1/X)."""
 
 from __future__ import annotations
 
@@ -587,30 +587,34 @@ class AnycubicCloudClient:
         file_id: int,
         is_delete_file: bool = False,
         camera_timelapse: bool = False,
+        ams_box_mapping: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Start printing an already-uploaded cloud file on Kobra 2 Pro."""
+        """Start printing an already-uploaded cloud file on any Anycubic Cloud FDM printer."""
+        order_data: Dict[str, Any] = {
+            "filetype": 0,
+            "file_key": "",
+            "file_name": "",
+            "file_id": int(file_id),
+            "hollow_param": None,
+            "is_delete_file": int(bool(is_delete_file)),
+            "matrix": "",
+            "project_type": 1,
+            "punching_param": None,
+            "slice_param": None,
+            "slice_size": None,
+            "template_id": 0,
+            "task_settings": {
+                "ai_detect": 0,
+                "camera_timelapse": int(bool(camera_timelapse)),
+            },
+        }
+        if ams_box_mapping:
+            order_data["ams_box_mapping"] = ams_box_mapping
         payload = {
             "order_id": ORDER_ID_START_PRINT,
             "printer_id": int(printer_id),
             "project_id": 0,
-            "data": {
-                "filetype": 0,
-                "file_key": "",
-                "file_name": "",
-                "file_id": int(file_id),
-                "hollow_param": None,
-                "is_delete_file": int(bool(is_delete_file)),
-                "matrix": "",
-                "project_type": 1,
-                "punching_param": None,
-                "slice_param": None,
-                "slice_size": None,
-                "template_id": 0,
-                "task_settings": {
-                    "ai_detect": 0,
-                    "camera_timelapse": int(bool(camera_timelapse)),
-                },
-            },
+            "data": order_data,
             "ams_info": None,
             "settings": None,
         }
@@ -893,6 +897,7 @@ class AnycubicCloudClient:
         remote_name: Optional[str] = None,
         start_print: bool = True,
         camera_timelapse: bool = False,
+        ams_box_mapping: Optional[List[Dict[str, Any]]] = None,
         progress_cb: Optional[ProgressCallback] = None,
         cancel_cb: Optional[CancelCallback] = None,
     ) -> Dict[str, Any]:
@@ -920,6 +925,7 @@ class AnycubicCloudClient:
                         file_id=file_id,
                         is_delete_file=True,
                         camera_timelapse=camera_timelapse,
+                        ams_box_mapping=ams_box_mapping,
                     )
                     result["started"] = True
                     last_err = None

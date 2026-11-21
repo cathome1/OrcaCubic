@@ -5,12 +5,12 @@
 # [tool.orcaslicer.plugin]
 # id = "orcacubic"
 # name = "OrcaCubic (Anycubic Cloud)"
-# description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud"
+# description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.2.0"
+# version = "0.2.1"
 # ///
 
-"""OrcaSlicer 2.5+ plugin for Anycubic Cloud (Kobra 2 Pro on macOS)."""
+"""OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
 
 from __future__ import annotations
 
@@ -98,9 +98,9 @@ def _resolve_target_printer(
             if p.printer_id == cfg.printer_id:
                 return p
 
-    # Auto-prefer Kobra 2 Pro if user hasn't picked one yet
+    # Auto-prefer the first online printer if user hasn't picked one yet
     for p in printers:
-        if "kobra 2 pro" in f"{p.name} {p.model}".lower():
+        if p.online:
             return p
 
     return printers[0]
@@ -190,7 +190,7 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
             id=AGENT_ID,
             name=AGENT_NAME,
             version=__version__,
-            description="Отправка G-code и запуск печати на Anycubic Kobra 2 Pro через Anycubic Cloud",
+            description="Remote printing, live telemetry & camera for Anycubic Cloud FDM printers (Kobra 2 / 3 / S1 / X)",
         )
 
     def _emit_ssdp_printer(
@@ -231,8 +231,8 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
         if cfg.printer_id is not None:
             self._emit_ssdp_printer(
                 cfg.printer_id,
-                cfg.printer_name or "Anycubic Kobra 2 Pro",
-                "Anycubic Kobra 2 Pro",
+                cfg.printer_name or "Anycubic Printer",
+                "Anycubic Printer",
                 multi=False,
             )
 

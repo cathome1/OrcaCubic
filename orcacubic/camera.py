@@ -172,9 +172,14 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
     )
     cam_data = cam_resp.get("data") or {}
     tok = cam_data.get("token")
+    if isinstance(tok, str) and (cam_data.get("app_id") or cam_data.get("appId") or cam_data.get("channel")):
+        raise AnycubicError(
+            "This printer uses the Agora camera protocol (Kobra 3 / S1 newer firmware). "
+            "Printing and telemetry work normally; Agora live camera streaming is planned for a future update."
+        )
     if not isinstance(tok, dict) or "tmpSecretId" not in tok:
         raise AnycubicError(
-            "Принтер не вернул AWS-токен камеры (возможно, камера не подключена или используется другой протокол)."
+            "Printer did not return an AWS KVS camera token (camera may be disconnected or using an unsupported protocol)."
         )
 
     region = str(tok.get("region") or "eu-central-1")
