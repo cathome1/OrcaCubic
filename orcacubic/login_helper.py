@@ -295,6 +295,31 @@ def _launch_macos_helper(
     )
 
 
+def _cdp_list_targets(port: int, timeout: float = 1.5) -> list[dict[str, Any]]:
+    """Fetch /json/list from local CDP over raw loopback socket (avoids urllib URL audit spam)."""
+    req = (
+        f"GET /json/list HTTP/1.1\r\n"
+        f"Host: 127.0.0.1:{port}\r\n"
+        f"Connection: close\r\n"
+        f"\r\n"
+    ).encode("ascii")
+    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        sock.sendall(req)
+        chunks: list[bytes] = []
+        while True:
+            chunk = sock.recv(8192)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    raw = b"".join(chunks)
+    if b"\r\n\r\n" not in raw:
+        return []
+    body = raw.split(b"\r\n\r\n", 1)[1].decode("utf-8", errors="replace").strip()
+    data = json.loads(body)
+    return data if isinstance(data, list) else []
+
+
 def _launch_browser_cdp_login(
     browser_path: Path,
     reset_session: bool = False,
@@ -340,8 +365,8 @@ def _launch_browser_cdp_login(
             break
     if proc is None:
         raise AnycubicAuthError(
-            f"Не удалось открыть окно браузера ({browser_path.name}): {last_exc}. "
-            "Если появилось окно разрешения OrcaSlicer — нажмите «Да» и повторите клик «Войти»."
+            f"Could not launch browser login window ({browser_path.name}): {last_exc}. "
+            "If an OrcaSlicer permission dialog appeared, click Yes and click Sign in again."
         )
 
     deadline = time.monotonic() + timeout
@@ -349,17 +374,18 @@ def _launch_browser_cdp_login(
     try:
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                raise AnycubicAuthError("Окно входа закрыто до завершения авторизации.")
+                raise AnycubicAuthError("Login window was closed before signing in.")
 
             targets: list[dict[str, Any]] = []
             try:
-                with urllib.request.urlopen(
-                    f"http://127.0.0.1:{port}/json/list", timeout=1.5
-                ) as resp:
-                    targets = json.loads(resp.read().decode("utf-8", errors="replace"))
-                    saw_cdp_ready = True
+                targets = _cdp_list_targets(port, timeout=1.5)
+                saw_cdp_ready = True
+            except PermissionError:
+                # Wait patiently while user approves OrcaSlicer's localhost socket prompt.
+                time.sleep(4.0)
+                continue
             except Exception:
-                time.sleep(0.5)
+                time.sleep(0.8)
                 continue
 
             page_targets = [
@@ -370,7 +396,7 @@ def _launch_browser_cdp_login(
                 and t.get("webSocketDebuggerUrl")
             ]
             if saw_cdp_ready and not page_targets:
-                raise AnycubicAuthError("Окно входа закрыто до завершения авторизации.")
+                raise AnycubicAuthError("Login window was closed before signing in.")
 
             # Prefer Anycubic Cloud pages
             ordered = sorted(
@@ -387,14 +413,17 @@ def _launch_browser_cdp_login(
                         "window.localStorage ? (window.localStorage.getItem('XX-Token') || '') : ''",
                         timeout=2.0,
                     )
+                except PermissionError:
+                    time.sleep(4.0)
+                    break
                 except Exception:
                     continue
                 if isinstance(val, str) and val.strip():
                     return val.strip()
 
-            time.sleep(0.6)
+            time.sleep(0.8)
 
-        raise AnycubicAuthError("Время ожидания входа в Anycubic Cloud истекло.")
+        raise AnycubicAuthError("Anycubic Cloud login timed out.")
     finally:
         if proc.poll() is None:
             try:
