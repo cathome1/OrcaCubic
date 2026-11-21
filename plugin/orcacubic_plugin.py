@@ -5,9 +5,9 @@
 # [tool.orcaslicer.plugin]
 # id = "orcacubic"
 # name = "OrcaCubic (Anycubic Cloud)"
-# description = "Удалённая печать на Anycubic Kobra 2 Pro через Anycubic Cloud"
-# author = "OrcaCubic"
-# version = "0.1.0"
+# description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud"
+# author = "cathome1"
+# version = "0.2.0"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (Kobra 2 Pro on macOS)."""
@@ -956,23 +956,24 @@ _PAGE_HTML = """<!DOCTYPE html>
     <div class="row" style="justify-content: space-between;">
       <div>
         <h1>OrcaCubic — Anycubic Cloud</h1>
-        <p class="sub" id="authStatus">Проверка состояния...</p>
+        <p class="sub" id="authStatus" data-i18n="checking_status">Проверка состояния...</p>
       </div>
       <div class="row">
-        <button id="btnLogin" onclick="send({action:'login_window'})">Войти в Anycubic Cloud</button>
-        <button id="btnRelogin" class="secondary" onclick="send({action:'login_window', reset_session:true})">Сменить аккаунт</button>
-        <button id="btnLogout" class="secondary" onclick="send({action:'logout'})">Выйти</button>
+        <button id="btnLang" class="secondary" style="padding:7px 10px; font-size:12px;" onclick="toggleLanguage()" title="Switch language / Сменить язык">EN / RU</button>
+        <button id="btnLogin" data-i18n="btn_login" onclick="send({action:'login_window'})">Войти в Anycubic Cloud</button>
+        <button id="btnRelogin" class="secondary" data-i18n="btn_relogin" onclick="send({action:'login_window', reset_session:true})">Сменить аккаунт</button>
+        <button id="btnLogout" class="secondary" data-i18n="btn_logout" onclick="send({action:'logout'})">Выйти</button>
       </div>
     </div>
     <details id="manualTokenBox">
-      <summary>Войти через браузер / вставить XX-Token вручную (Windows / Linux / macOS)</summary>
-      <p class="sub" style="margin: 10px 0 8px 0;">
+      <summary data-i18n="manual_token_summary">Войти через браузер / вставить XX-Token вручную (Windows / Linux / macOS)</summary>
+      <p class="sub" id="manualTokenSteps" style="margin: 10px 0 8px 0;">
         1. Откройте <a href="https://cloud-universe.anycubic.com/" target="_blank" style="color:var(--accent)">cloud-universe.anycubic.com</a> и войдите в аккаунт.<br>
         2. В консоли браузера (F12 → Console) выполните: <code>copy(localStorage.getItem('XX-Token'))</code> и вставьте ниже:
       </p>
       <div class="row">
-        <input id="manualToken" type="password" placeholder="Вставьте XX-Token" />
-        <button class="secondary" onclick="saveManualToken()">Сохранить токен</button>
+        <input id="manualToken" type="password" data-i18n-placeholder="manual_token_ph" placeholder="Вставьте XX-Token" />
+        <button class="secondary" data-i18n="btn_save_token" onclick="saveManualToken()">Сохранить токен</button>
       </div>
     </details>
   </div>
@@ -981,86 +982,86 @@ _PAGE_HTML = """<!DOCTYPE html>
 
   <div class="card" id="monitorCard" style="display:none;">
     <div class="row" style="justify-content: space-between; margin-bottom: 6px;">
-      <h2 style="margin:0;" id="monitorTitle">Мониторинг печати</h2>
-      <span id="monitorBadge" class="badge idle">Свободен</span>
+      <h2 style="margin:0;" id="monitorTitle" data-i18n="monitor_title">Мониторинг печати</h2>
+      <span id="monitorBadge" class="badge idle">Idle</span>
     </div>
-    <div id="monitorFile" class="sub">Нет активного задания</div>
+    <div id="monitorFile" class="sub" data-i18n="no_active_job">Нет активного задания</div>
     <div class="progress-track"><div id="monitorProgressBar" class="progress-fill"></div></div>
     <div class="stats-grid">
       <div class="stat-box">
-        <div class="stat-label">Прогресс</div>
+        <div class="stat-label" data-i18n="stat_progress">Прогресс</div>
         <div class="stat-val" id="statProgress">0%</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Слои</div>
+        <div class="stat-label" data-i18n="stat_layers">Слои</div>
         <div class="stat-val" id="statLayers">—</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Осталось / ETA</div>
+        <div class="stat-label" data-i18n="stat_remain">Осталось / ETA</div>
         <div class="stat-val" id="statRemain">—</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Сопло</div>
+        <div class="stat-label" data-i18n="stat_nozzle">Сопло</div>
         <div class="stat-val" id="statNozzle">—</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Стол</div>
+        <div class="stat-label" data-i18n="stat_bed">Стол</div>
         <div class="stat-val" id="statBed">—</div>
       </div>
     </div>
     <div class="row" style="margin-top: 10px;">
-      <button id="btnPause" class="secondary" onclick="controlPrinter('pause')">Пауза</button>
-      <button id="btnResume" onclick="controlPrinter('resume')" style="display:none;">Продолжить</button>
-      <button id="btnStop" class="danger" onclick="controlPrinter('stop')">Стоп</button>
+      <button id="btnPause" class="secondary" data-i18n="btn_pause" onclick="controlPrinter('pause')">Пауза</button>
+      <button id="btnResume" data-i18n="btn_resume" onclick="controlPrinter('resume')" style="display:none;">Продолжить</button>
+      <button id="btnStop" class="danger" data-i18n="btn_stop" onclick="controlPrinter('stop')">Стоп</button>
       <span style="flex:1;"></span>
       <select id="speedSelect" style="flex:0 0 auto; min-width:150px;" onchange="changeSpeed(this.value)">
-        <option value="">Скорость печати...</option>
-        <option value="1">Тихий режим</option>
-        <option value="2">Стандартный</option>
-        <option value="3">Спорт</option>
+        <option value="" data-i18n="speed_placeholder">Скорость печати...</option>
+        <option value="1" data-i18n="speed_quiet">Тихий режим</option>
+        <option value="2" data-i18n="speed_std">Стандартный</option>
+        <option value="3" data-i18n="speed_sport">Спорт</option>
       </select>
-      <button id="btnCamStart" class="secondary" onclick="startCamera()">Включить камеру</button>
-      <button id="btnCamStop" class="secondary" onclick="stopCamera()" style="display:none;">Выключить камеру</button>
+      <button id="btnCamStart" class="secondary" data-i18n="btn_cam_start" onclick="startCamera()">Включить камеру</button>
+      <button id="btnCamStop" class="secondary" data-i18n="btn_cam_stop" onclick="stopCamera()" style="display:none;">Выключить камеру</button>
     </div>
     <div id="cameraBox" style="display:none; margin-top: 12px;">
       <div id="camViewport" style="width:100%; aspect-ratio:4/3; max-height:420px; margin:0 auto; background:#000; border-radius:8px; overflow:hidden; position:relative;">
         <video id="camVideo" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover; display:block; background:#000; transform-origin:center center; transition:transform 0.08s linear;"></video>
       </div>
       <div class="row" style="margin-top:8px; gap:8px;">
-        <span class="sub">Горизонт:</span>
+        <span class="sub" data-i18n="cam_horizon">Горизонт:</span>
         <input id="camAngle" type="range" min="-45" max="45" step="0.5" value="0" style="flex:1; min-width:120px;" oninput="updateCamTransform(false)" onchange="updateCamTransform(true)" />
         <span id="camAngleVal" class="sub" style="min-width:44px; text-align:right;">0°</span>
-        <button class="secondary" style="padding:4px 8px;" onclick="rotateCam90()" title="Повернуть на 90°">+90°</button>
-        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFlip('h')" title="Отразить по горизонтали">⇄</button>
-        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFlip('v')" title="Отразить по вертикали">⇅</button>
-        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFullscreen()" title="На весь экран">⛶</button>
-        <button class="secondary" style="padding:4px 8px;" onclick="resetCamTransform()">Сброс</button>
+        <button class="secondary" style="padding:4px 8px;" onclick="rotateCam90()" title="Rotate 90°">+90°</button>
+        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFlip('h')" title="Flip horizontal">⇄</button>
+        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFlip('v')" title="Flip vertical">⇅</button>
+        <button class="secondary" style="padding:4px 8px;" onclick="toggleCamFullscreen()" title="Fullscreen">⛶</button>
+        <button class="secondary" style="padding:4px 8px;" data-i18n="cam_reset" onclick="resetCamTransform()">Сброс</button>
       </div>
       <details style="margin-top: 8px;">
-        <summary>Таймлапс (опционально)</summary>
+        <summary data-i18n="tl_summary">Таймлапс (опционально)</summary>
         <div class="row" style="margin-top:8px; gap:8px;">
-          <button id="btnTlStart" class="secondary" style="padding:5px 10px;" onclick="startTimelapse()">● Записать таймлапс</button>
-          <button id="btnTlStop" class="danger" style="padding:5px 10px; display:none;" onclick="stopTimelapse()">■ Сохранить таймлапс</button>
+          <button id="btnTlStart" class="secondary" style="padding:5px 10px;" data-i18n="btn_tl_start" onclick="startTimelapse()">● Записать таймлапс</button>
+          <button id="btnTlStop" class="danger" style="padding:5px 10px; display:none;" data-i18n="btn_tl_stop" onclick="stopTimelapse()">■ Сохранить таймлапс</button>
           <select id="tlInterval" style="flex:0 0 auto; min-width:170px; padding:5px 8px;">
-            <option value="2000">Кадр раз в 2с</option>
-            <option value="5000" selected>Кадр раз в 5с</option>
-            <option value="10000">Кадр раз в 10с</option>
-            <option value="30000">Кадр раз в 30с</option>
-            <option value="layer">По смене слоя</option>
-            <option value="park">При парковке головы</option>
+            <option value="2000" data-i18n="tl_2s">Кадр раз в 2с</option>
+            <option value="5000" selected data-i18n="tl_5s">Кадр раз в 5с</option>
+            <option value="10000" data-i18n="tl_10s">Кадр раз в 10с</option>
+            <option value="30000" data-i18n="tl_30s">Кадр раз в 30с</option>
+            <option value="layer" data-i18n="tl_layer">По смене слоя</option>
+            <option value="park" data-i18n="tl_park">При парковке головы</option>
           </select>
           <span id="tlStatus" class="sub"></span>
         </div>
         <div class="row" style="margin-top:8px; gap:8px;">
           <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer;">
             <input id="tlAutoCheckbox" type="checkbox" onchange="toggleTimelapseAuto(this.checked)" />
-            Автозапуск и автосохранение таймлапса при печати (при включённой камере)
+            <span data-i18n="tl_auto_label">Автозапуск и автосохранение таймлапса при печати (при включённой камере)</span>
           </label>
         </div>
         <div class="row" style="margin-top:8px; gap:8px;">
-          <input id="tlDirInput" type="text" placeholder="Папка сохранения (по умолчанию data/timelapses)" />
-          <button class="secondary" style="padding:5px 10px;" onclick="send({action:'browse_timelapse_dir'})">Выбрать папку...</button>
-          <button class="secondary" style="padding:5px 10px;" onclick="saveTimelapseDir()">Сохранить</button>
+          <input id="tlDirInput" type="text" data-i18n-placeholder="tl_dir_ph" placeholder="Папка сохранения (по умолчанию data/timelapses)" />
+          <button class="secondary" style="padding:5px 10px;" data-i18n="btn_browse" onclick="send({action:'browse_timelapse_dir'})">Выбрать папку...</button>
+          <button class="secondary" style="padding:5px 10px;" data-i18n="btn_save" onclick="saveTimelapseDir()">Сохранить</button>
         </div>
       </details>
       <div id="camStatus" class="sub" style="margin-top:6px;"></div>
@@ -1068,36 +1069,220 @@ _PAGE_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <h2>Принтеры аккаунта</h2>
+    <h2 data-i18n="printers_title">Принтеры аккаунта</h2>
     <div class="row" style="margin-bottom: 10px;">
-      <input id="printerSearch" type="text" placeholder="Поиск по имени, модели или ID..." oninput="applyPrinterFilter()" />
+      <input id="printerSearch" type="text" data-i18n-placeholder="printer_search_ph" placeholder="Поиск по имени, модели или ID..." oninput="applyPrinterFilter()" />
       <select id="printerStatusFilter" style="flex:0 0 auto; min-width:140px;" onchange="applyPrinterFilter()">
-        <option value="all">Все статусы</option>
-        <option value="idle">Свободен</option>
-        <option value="printing">Печатает</option>
-        <option value="online">Онлайн</option>
+        <option value="all" data-i18n="flt_all">Все статусы</option>
+        <option value="idle" data-i18n="flt_idle">Свободен</option>
+        <option value="printing" data-i18n="flt_printing">Печатает</option>
+        <option value="online" data-i18n="flt_online">Онлайн</option>
       </select>
-      <button id="btnRefresh" class="secondary" onclick="refreshPrinters()">Обновить</button>
+      <button id="btnRefresh" class="secondary" data-i18n="btn_refresh" onclick="refreshPrinters()">Обновить</button>
     </div>
     <div id="lastUpdated" class="sub" style="margin-bottom: 10px;"></div>
-    <div id="printersList" class="sub">Войдите в аккаунт, чтобы увидеть принтеры.</div>
-    <p class="sub" style="margin-top: 10px;">
+    <div id="printersList" class="sub" data-i18n="login_to_see_printers">Войдите в аккаунт, чтобы увидеть принтеры.</div>
+    <p class="sub" id="modeHint" style="margin-top: 10px;">
       • <strong>Распечатать стол</strong> — отправить на печать через Anycubic Cloud.<br>
-      • <strong>Отправить</strong> — только загрузить `.gcode` в облачную библиотеку Anycubic.
+      • <strong>Отправить</strong> — только загрузить .gcode в облачную библиотеку Anycubic.
     </p>
   </div>
 
   <div class="card">
-    <h2>Облачные файлы Anycubic Cloud</h2>
+    <h2 data-i18n="cloud_files_title">Облачные файлы Anycubic Cloud</h2>
     <div class="row" style="margin-bottom: 12px;">
-      <button id="btnRefreshFiles" class="secondary" onclick="refreshFiles()">Обновить файлы</button>
+      <button id="btnRefreshFiles" class="secondary" data-i18n="btn_refresh_files" onclick="refreshFiles()">Обновить файлы</button>
       <span id="cloudSpace" class="sub"></span>
     </div>
-    <div id="cloudFilesList" class="sub">Войдите в аккаунт, чтобы увидеть файлы в облаке.</div>
+    <div id="cloudFilesList" class="sub" data-i18n="login_to_see_files">Войдите в аккаунт, чтобы увидеть файлы в облаке.</div>
   </div>
 </div>
 
 <script>
+  const I18N = {
+    en: {
+      checking_status: 'Checking status...',
+      btn_login: 'Sign in to Anycubic Cloud',
+      btn_relogin: 'Switch account',
+      btn_logout: 'Sign out',
+      manual_token_summary: 'Sign in via browser / paste XX-Token manually (Windows / Linux / macOS)',
+      manual_token_steps: '1. Open <a href="https://cloud-universe.anycubic.com/" target="_blank" style="color:var(--accent)">cloud-universe.anycubic.com</a> and sign in.<br>2. In DevTools Console (F12 → Console) run: <code>copy(localStorage.getItem(\'XX-Token\'))</code> and paste below:',
+      manual_token_ph: 'Paste XX-Token',
+      btn_save_token: 'Save token',
+      monitor_title: 'Print Monitor',
+      no_active_job: 'No active print job',
+      stat_progress: 'Progress',
+      stat_layers: 'Layers',
+      stat_remain: 'Remaining / ETA',
+      stat_nozzle: 'Nozzle',
+      stat_bed: 'Bed',
+      btn_pause: 'Pause',
+      btn_resume: 'Resume',
+      btn_stop: 'Stop',
+      speed_placeholder: 'Print speed...',
+      speed_quiet: 'Quiet',
+      speed_std: 'Standard',
+      speed_sport: 'Sport',
+      btn_cam_start: 'Start camera',
+      btn_cam_stop: 'Stop camera',
+      cam_horizon: 'Horizon:',
+      cam_reset: 'Reset',
+      tl_summary: 'Timelapse (optional)',
+      btn_tl_start: '● Record timelapse',
+      btn_tl_stop: '■ Save timelapse',
+      tl_2s: 'Frame every 2s',
+      tl_5s: 'Frame every 5s',
+      tl_10s: 'Frame every 10s',
+      tl_30s: 'Frame every 30s',
+      tl_layer: 'On layer change',
+      tl_park: 'On head park',
+      tl_auto_label: 'Auto-start & auto-save timelapse on print (when camera is on)',
+      tl_dir_ph: 'Output folder (default: data/timelapses)',
+      btn_browse: 'Browse...',
+      btn_save: 'Save',
+      printers_title: 'Account Printers',
+      printer_search_ph: 'Search by name, model, or ID...',
+      flt_all: 'All statuses',
+      flt_idle: 'Idle',
+      flt_printing: 'Printing',
+      flt_online: 'Online',
+      btn_refresh: 'Refresh',
+      btn_refreshing: 'Refreshing...',
+      login_to_see_printers: 'Sign in to view your printers.',
+      mode_hint: '• <strong>Print plate</strong> — upload and start printing via Anycubic Cloud.<br>• <strong>Send</strong> — upload .gcode to Anycubic Cloud library only.',
+      cloud_files_title: 'Anycubic Cloud Files',
+      btn_refresh_files: 'Refresh files',
+      btn_loading: 'Loading...',
+      login_to_see_files: 'Sign in to view cloud files.',
+      status_idle: 'Idle',
+      status_downloading: 'Downloading file',
+      status_printing: 'Printing',
+      status_paused: 'Paused',
+      status_offline: 'Offline',
+      file_prefix: 'File: ',
+      fw_prefix: 'Firmware: ',
+      updated_prefix: 'Updated: ',
+      used_prefix: 'Storage: ',
+      signed_in: 'Signed in',
+      not_signed_in_helper: 'Not signed in. Click "Sign in to Anycubic Cloud".',
+      not_signed_in_manual: 'Not signed in. Paste XX-Token from cloud-universe.anycubic.com below.',
+      no_printers: 'No printers found. Click "Refresh".',
+      no_printers_filter: 'No printers match the current filter.',
+      no_files: 'No cloud files yet. Click "Refresh files".',
+      btn_print: 'Print',
+      btn_delete: 'Delete',
+      nozzle_short: 'Nozzle',
+      bed_short: 'Bed',
+      min_short: 'min',
+      confirm_print: 'Start printing "{name}" on the selected printer?',
+      confirm_delete: 'Delete "{name}" from Anycubic Cloud?',
+      confirm_stop: 'Stop the current print on the selected printer?'
+    },
+    ru: {
+      checking_status: 'Проверка состояния...',
+      btn_login: 'Войти в Anycubic Cloud',
+      btn_relogin: 'Сменить аккаунт',
+      btn_logout: 'Выйти',
+      manual_token_summary: 'Войти через браузер / вставить XX-Token вручную (Windows / Linux / macOS)',
+      manual_token_steps: '1. Откройте <a href="https://cloud-universe.anycubic.com/" target="_blank" style="color:var(--accent)">cloud-universe.anycubic.com</a> и войдите в аккаунт.<br>2. В консоли браузера (F12 → Console) выполните: <code>copy(localStorage.getItem(\'XX-Token\'))</code> и вставьте ниже:',
+      manual_token_ph: 'Вставьте XX-Token',
+      btn_save_token: 'Сохранить токен',
+      monitor_title: 'Мониторинг печати',
+      no_active_job: 'Нет активного задания',
+      stat_progress: 'Прогресс',
+      stat_layers: 'Слои',
+      stat_remain: 'Осталось / ETA',
+      stat_nozzle: 'Сопло',
+      stat_bed: 'Стол',
+      btn_pause: 'Пауза',
+      btn_resume: 'Продолжить',
+      btn_stop: 'Стоп',
+      speed_placeholder: 'Скорость печати...',
+      speed_quiet: 'Тихий режим',
+      speed_std: 'Стандартный',
+      speed_sport: 'Спорт',
+      btn_cam_start: 'Включить камеру',
+      btn_cam_stop: 'Выключить камеру',
+      cam_horizon: 'Горизонт:',
+      cam_reset: 'Сброс',
+      tl_summary: 'Таймлапс (опционально)',
+      btn_tl_start: '● Записать таймлапс',
+      btn_tl_stop: '■ Сохранить таймлапс',
+      tl_2s: 'Кадр раз в 2с',
+      tl_5s: 'Кадр раз в 5с',
+      tl_10s: 'Кадр раз в 10с',
+      tl_30s: 'Кадр раз в 30с',
+      tl_layer: 'По смене слоя',
+      tl_park: 'При парковке головы',
+      tl_auto_label: 'Автозапуск и автосохранение таймлапса при печати (при включённой камере)',
+      tl_dir_ph: 'Папка сохранения (по умолчанию data/timelapses)',
+      btn_browse: 'Выбрать папку...',
+      btn_save: 'Сохранить',
+      printers_title: 'Принтеры аккаунта',
+      printer_search_ph: 'Поиск по имени, модели или ID...',
+      flt_all: 'Все статусы',
+      flt_idle: 'Свободен',
+      flt_printing: 'Печатает',
+      flt_online: 'Онлайн',
+      btn_refresh: 'Обновить',
+      btn_refreshing: 'Обновление...',
+      login_to_see_printers: 'Войдите в аккаунт, чтобы увидеть принтеры.',
+      mode_hint: '• <strong>Распечатать стол</strong> — отправить на печать через Anycubic Cloud.<br>• <strong>Отправить</strong> — только загрузить .gcode в облачную библиотеку Anycubic.',
+      cloud_files_title: 'Облачные файлы Anycubic Cloud',
+      btn_refresh_files: 'Обновить файлы',
+      btn_loading: 'Загрузка...',
+      login_to_see_files: 'Войдите в аккаунт, чтобы увидеть файлы в облаке.',
+      status_idle: 'Свободен',
+      status_downloading: 'Загрузка файла',
+      status_printing: 'Печатает',
+      status_paused: 'Пауза',
+      status_offline: 'Офлайн',
+      file_prefix: 'Файл: ',
+      fw_prefix: 'Прошивка: ',
+      updated_prefix: 'Обновлено: ',
+      used_prefix: 'Занято: ',
+      signed_in: 'Авторизован',
+      not_signed_in_helper: 'Не авторизован. Нажмите «Войти в Anycubic Cloud».',
+      not_signed_in_manual: 'Не авторизован. Вставьте XX-Token из cloud-universe.anycubic.com ниже.',
+      no_printers: 'Принтеры не найдены. Нажмите «Обновить».',
+      no_printers_filter: 'По фильтру принтеры не найдены.',
+      no_files: 'В облаке пока нет файлов. Нажмите «Обновить файлы».',
+      btn_print: 'Печатать',
+      btn_delete: 'Удалить',
+      nozzle_short: 'Сопло',
+      bed_short: 'Стол',
+      min_short: 'мин',
+      confirm_print: 'Запустить печать «{name}» на выбранном принтере?',
+      confirm_delete: 'Удалить «{name}» из Anycubic Cloud?',
+      confirm_stop: 'Остановить текущую печать на выбранном принтере?'
+    }
+  };
+  let _lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+  function t(key) {
+    return (I18N[_lang] && I18N[_lang][key]) || I18N.en[key] || key;
+  }
+  function applyLanguage(lang) {
+    if (lang === 'en' || lang === 'ru') _lang = lang;
+    else _lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      el.textContent = t(el.getAttribute('data-i18n'));
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+      el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+    });
+    const stepsEl = document.getElementById('manualTokenSteps');
+    if (stepsEl) stepsEl.innerHTML = t('manual_token_steps');
+    const hintEl = document.getElementById('modeHint');
+    if (hintEl) hintEl.innerHTML = t('mode_hint');
+    const btnLang = document.getElementById('btnLang');
+    if (btnLang) btnLang.textContent = _lang === 'ru' ? 'EN' : 'RU';
+  }
+  function toggleLanguage() {
+    const next = _lang === 'ru' ? 'en' : 'ru';
+    applyLanguage(next);
+    send({action: 'set_language', language: next});
+    if (_lastState) renderState(_lastState);
+  }
   function send(payload) {
     if (window.orca && typeof window.orca.postMessage === 'function') {
       window.orca.postMessage(payload);
@@ -1111,24 +1296,24 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
   function refreshPrinters() {
     const btn = document.getElementById('btnRefresh');
-    if (btn) { btn.disabled = true; btn.textContent = 'Обновление...'; }
+    if (btn) { btn.disabled = true; btn.textContent = t('btn_refreshing'); }
     send({action: 'refresh_printers'});
   }
   function refreshFiles() {
     const btn = document.getElementById('btnRefreshFiles');
-    if (btn) { btn.disabled = true; btn.textContent = 'Загрузка...'; }
+    if (btn) { btn.disabled = true; btn.textContent = t('btn_loading'); }
     send({action: 'refresh_files'});
   }
   function printCloudFile(fileId, gcodeId, name, url) {
-    if (!confirm('Запустить печать «' + name + '» на выбранном принтере?')) return;
+    if (!confirm(t('confirm_print').replace('{name}', name))) return;
     send({action: 'print_cloud_file', file_id: fileId, gcode_id: gcodeId, name: name, url: url || ''});
   }
   function deleteCloudFile(fileId, name) {
-    if (!confirm('Удалить «' + name + '» из Anycubic Cloud?')) return;
+    if (!confirm(t('confirm_delete').replace('{name}', name))) return;
     send({action: 'delete_cloud_file', file_id: fileId, name: name});
   }
   function controlPrinter(cmd) {
-    if (cmd === 'stop' && !confirm('Остановить текущую печать на выбранном принтере?')) return;
+    if (cmd === 'stop' && !confirm(t('confirm_stop'))) return;
     send({action: 'printer_control', cmd: cmd});
   }
   function changeSpeed(val) {
@@ -1496,7 +1681,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     const eta = new Date(Date.now() + remainMin * 60000);
     const hh = String(eta.getHours()).padStart(2, '0');
     const mm = String(eta.getMinutes()).padStart(2, '0');
-    return remainMin + ' мин (' + hh + ':' + mm + ')';
+    return remainMin + ' ' + t('min_short') + ' (' + hh + ':' + mm + ')';
   }
   let _uploadState = null;
   function effectivePrinterStatus(p) {
@@ -1524,27 +1709,27 @@ _PAGE_HTML = """<!DOCTYPE html>
     card.style.display = 'block';
     document.getElementById('monitorTitle').textContent = p.name;
     const statusMap = {
-      idle: 'Свободен',
-      downloading: 'Загрузка файла',
-      printing: 'Печатает',
-      paused: 'Пауза',
-      offline: 'Офлайн'
+      idle: t('status_idle'),
+      downloading: t('status_downloading'),
+      printing: t('status_printing'),
+      paused: t('status_paused'),
+      offline: t('status_offline')
     };
     const effStatus = (_uploadState && _uploadState.active) ? 'downloading' : effectivePrinterStatus(p);
     const badge = document.getElementById('monitorBadge');
     badge.className = 'badge ' + effStatus;
     if (_uploadState && _uploadState.active) {
-      badge.textContent = 'Загрузка файла ' + (_uploadState.pct || 0) + '%';
+      badge.textContent = t('status_downloading') + ' ' + (_uploadState.pct || 0) + '%';
     } else if (effStatus === 'downloading') {
-      badge.textContent = (p.progress || 0) > 0 ? ('Загрузка файла ' + p.progress + '%') : 'Загрузка файла';
+      badge.textContent = (p.progress || 0) > 0 ? (t('status_downloading') + ' ' + p.progress + '%') : t('status_downloading');
     } else {
       badge.textContent = statusMap[effStatus] || effStatus;
     }
     document.getElementById('monitorFile').textContent = (_uploadState && _uploadState.active && _uploadState.text)
       ? _uploadState.text
       : (p.current_file
-          ? ('Файл: ' + p.current_file)
-          : (p.firmware_version ? ('Прошивка: ' + p.firmware_version) : 'Нет активного задания'));
+          ? (t('file_prefix') + p.current_file)
+          : (p.firmware_version ? (t('fw_prefix') + p.firmware_version) : t('no_active_job')));
     const pct = (_uploadState && _uploadState.active)
       ? (_uploadState.pct || 0)
       : ((effStatus === 'printing' || effStatus === 'paused' || effStatus === 'downloading') ? (p.progress || 0) : 0);
@@ -1611,8 +1796,8 @@ _PAGE_HTML = """<!DOCTYPE html>
     const printers = st.printers || [];
     if (!printers.length) {
       listEl.textContent = st.config && st.config.has_token
-        ? 'Принтеры не найдены. Нажмите «Обновить».'
-        : 'Войдите в аккаунт, чтобы увидеть принтеры.';
+        ? t('no_printers')
+        : t('login_to_see_printers');
       return;
     }
     const q = (document.getElementById('printerSearch').value || '').trim().toLowerCase();
@@ -1628,7 +1813,7 @@ _PAGE_HTML = """<!DOCTYPE html>
       return true;
     });
     if (!filtered.length) {
-      listEl.textContent = 'По фильтру принтеры не найдены.';
+      listEl.textContent = t('no_printers_filter');
       return;
     }
     listEl.innerHTML = '';
@@ -1641,16 +1826,16 @@ _PAGE_HTML = """<!DOCTYPE html>
       };
       const effStatus = effectivePrinterStatus(p);
       const statusMap = {
-        idle: 'Свободен',
-        downloading: (p.progress || 0) > 0 ? ('Загрузка файла ' + p.progress + '%') : 'Загрузка файла',
-        printing: 'Печатает ' + p.progress + '%',
-        paused: 'Пауза',
-        offline: 'Офлайн'
+        idle: t('status_idle'),
+        downloading: (p.progress || 0) > 0 ? (t('status_downloading') + ' ' + p.progress + '%') : t('status_downloading'),
+        printing: t('status_printing') + ' ' + p.progress + '%',
+        paused: t('status_paused'),
+        offline: t('status_offline')
       };
       const badgeCls = effStatus;
       const tempParts = [];
-      if (p.nozzle_temp !== null && p.nozzle_temp !== undefined) tempParts.push('Сопло ' + Math.round(p.nozzle_temp) + '°C');
-      if (p.bed_temp !== null && p.bed_temp !== undefined) tempParts.push('Стол ' + Math.round(p.bed_temp) + '°C');
+      if (p.nozzle_temp !== null && p.nozzle_temp !== undefined) tempParts.push(t('nozzle_short') + ' ' + Math.round(p.nozzle_temp) + '°C');
+      if (p.bed_temp !== null && p.bed_temp !== undefined) tempParts.push(t('bed_short') + ' ' + Math.round(p.bed_temp) + '°C');
       const meta = [p.model || ('ID ' + p.printer_id), p.current_file, tempParts.join(' · ')].filter(Boolean).join(' · ');
       div.innerHTML =
         '<div><strong>' + escapeHtml(p.name) + '</strong>' +
@@ -1661,14 +1846,17 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
   function renderState(st) {
     _lastState = st;
+    if (st.config && st.config.language) {
+      applyLanguage(st.config.language);
+    }
     const btnRef = document.getElementById('btnRefresh');
-    if (btnRef) { btnRef.disabled = false; btnRef.textContent = 'Обновить'; }
+    if (btnRef) { btnRef.disabled = false; btnRef.textContent = t('btn_refresh'); }
     const btnFiles = document.getElementById('btnRefreshFiles');
-    if (btnFiles) { btnFiles.disabled = false; btnFiles.textContent = 'Обновить файлы'; }
+    if (btnFiles) { btnFiles.disabled = false; btnFiles.textContent = t('btn_refresh_files'); }
     const updEl = document.getElementById('lastUpdated');
-    if (updEl && st.updated_at) { updEl.textContent = 'Обновлено: ' + st.updated_at; }
+    if (updEl && st.updated_at) { updEl.textContent = t('updated_prefix') + st.updated_at; }
     const spaceEl = document.getElementById('cloudSpace');
-    if (spaceEl) { spaceEl.textContent = (st.cloud_storage && st.cloud_storage.label) ? ('Занято: ' + st.cloud_storage.label) : ''; }
+    if (spaceEl) { spaceEl.textContent = (st.cloud_storage && st.cloud_storage.label) ? (t('used_prefix') + st.cloud_storage.label) : ''; }
     const tlDirEl = document.getElementById('tlDirInput');
     if (tlDirEl && document.activeElement !== tlDirEl) {
       tlDirEl.value = (st.config && st.config.timelapse_dir) ? st.config.timelapse_dir : (st.default_timelapse_dir || '');
@@ -1689,11 +1877,11 @@ _PAGE_HTML = """<!DOCTYPE html>
     }
     if (hasToken) {
       const userLabel = st.user && st.user.email ? ' (' + st.user.email + ')' : '';
-      authEl.textContent = 'Авторизован' + userLabel;
+      authEl.textContent = t('signed_in') + userLabel;
     } else {
       authEl.textContent = hasHelper
-        ? 'Не авторизован. Нажмите «Войти в Anycubic Cloud».'
-        : 'Не авторизован. Вставьте XX-Token из cloud-universe.anycubic.com ниже.';
+        ? t('not_signed_in_helper')
+        : t('not_signed_in_manual');
     }
     const printers = st.printers || [];
     const selId = st.config ? st.config.printer_id : null;
@@ -1713,8 +1901,8 @@ _PAGE_HTML = """<!DOCTYPE html>
     const files = st.cloud_files || [];
     if (!files.length) {
       filesEl.textContent = st.config && st.config.has_token
-        ? 'В облаке пока нет файлов. Нажмите «Обновить файлы».'
-        : 'Войдите в аккаунт, чтобы увидеть файлы в облаке.';
+        ? t('no_files')
+        : t('login_to_see_files');
     } else {
       filesEl.innerHTML = '';
       files.forEach(function(f) {
@@ -1731,11 +1919,11 @@ _PAGE_HTML = """<!DOCTYPE html>
         actions.className = 'row';
         actions.style.flexShrink = '0';
         const btnPrint = document.createElement('button');
-        btnPrint.textContent = 'Печатать';
+        btnPrint.textContent = t('btn_print');
         btnPrint.onclick = function() { printCloudFile(f.file_id, f.gcode_id, f.name, f.url); };
         const btnDel = document.createElement('button');
         btnDel.className = 'secondary';
-        btnDel.textContent = 'Удалить';
+        btnDel.textContent = t('btn_delete');
         btnDel.onclick = function() { deleteCloudFile(f.file_id, f.name); };
         actions.appendChild(btnPrint);
         actions.appendChild(btnDel);
@@ -1770,6 +1958,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     });
   }
   window.addEventListener('DOMContentLoaded', function() {
+    applyLanguage(_lang);
     send({action: 'init'});
     setInterval(function() {
       if (document.visibilityState === 'visible') {
@@ -1781,6 +1970,18 @@ _PAGE_HTML = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+
+def _decode_validated_video(data_b64: str, ext: str) -> bytes:
+    """Decode base64-encoded timelapse video and verify MP4/WebM container magic bytes."""
+    raw = base64.b64decode(data_b64, validate=True)
+    if len(raw) < 12:
+        raise ValueError("Empty or truncated video data.")
+    if ext == "mp4" and b"ftyp" not in raw[:16]:
+        raise ValueError("Invalid MP4 video header.")
+    if ext == "webm" and not raw.startswith(b"\x1a\x45\xdf\xa3"):
+        raise ValueError("Invalid WebM video header.")
+    return raw
 
 
 class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
@@ -2162,10 +2363,17 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             self._emit_state(cfg=cfg, notice=f"Папка таймлапсов: {shown}")
             return
 
+        if action == "set_language":
+            lang = str(data.get("language") or "auto").lower()
+            if lang in ("auto", "en", "ru"):
+                cfg = load_config(path=_CONFIG_FILE)
+                cfg.language = lang
+                save_config(cfg, path=_CONFIG_FILE)
+                self._emit_state(cfg=cfg)
+            return
+
         if action == "save_timelapse":
-            ext = str(data.get("ext") or "mp4").lower()
-            if ext not in ("mp4", "webm"):
-                ext = "mp4"
+            ext = "mp4" if str(data.get("ext") or "mp4").lower() == "mp4" else "webm"
             frames = int(data.get("frames") or 0)
             b64 = str(data.get("data_b64") or "")
             if not b64:
@@ -2177,23 +2385,25 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                 else _TIMELAPSE_DIR
             )
             try:
-                raw_bytes = base64.b64decode(b64)
+                video_bytes = _decode_validated_video(b64, ext)
                 if not target_dir.exists():
                     target_dir.mkdir(parents=True, exist_ok=True)
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                out_path = target_dir / f"timelapse_{ts}.{ext}"
-                out_path.write_bytes(raw_bytes)
+                out_name = f"timelapse_{ts}.mp4" if ext == "mp4" else f"timelapse_{ts}.webm"
+                out_path = target_dir / out_name
+                with open(out_path, "wb") as fp:
+                    fp.write(video_bytes)
                 self.post_message(
                     {
                         "type": "timelapse_saved",
-                        "text": f"Таймлапс сохранён ({frames} кадр.): {out_path}",
+                        "text": f"Timelapse saved ({frames} frames): {out_path}",
                     }
                 )
             except Exception as exc:
                 self.post_message(
                     {
                         "type": "timelapse_saved",
-                        "text": f"Ошибка сохранения в {target_dir}: {exc}",
+                        "text": f"Failed to save timelapse to {target_dir}: {exc}",
                     }
                 )
             return

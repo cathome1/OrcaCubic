@@ -64,27 +64,17 @@ def find_chromium_browser() -> Optional[Path]:
     candidates: list[Path] = []
 
     if system == "Windows":
-        env_roots = [
-            os.environ.get("PROGRAMFILES(X86)"),
-            os.environ.get("PROGRAMFILES"),
-            os.environ.get("LOCALAPPDATA"),
-        ]
-        rel_paths = [
-            Path("Microsoft") / "Edge" / "Application" / "msedge.exe",
-            Path("Google") / "Chrome" / "Application" / "chrome.exe",
-            Path("BraveSoftware") / "Brave-Browser" / "Application" / "brave.exe",
-            Path("Chromium") / "Application" / "chrome.exe",
-        ]
-        for root in env_roots:
-            if not root:
-                continue
-            base = Path(root)
-            for rel in rel_paths:
-                candidates.append(base / rel)
-        for name in ("msedge", "msedge.exe", "chrome", "chrome.exe", "brave", "chromium"):
+        for name in ("msedge", "msedge.exe", "chrome", "chrome.exe", "chromium"):
             found = shutil.which(name)
             if found:
                 candidates.append(Path(found))
+        for env_var in ("PROGRAMFILES(X86)", "PROGRAMFILES"):
+            root = os.environ.get(env_var)
+            if not root:
+                continue
+            base = Path(root)
+            candidates.append(base / "Microsoft" / "Edge" / "Application" / "msedge.exe")
+            candidates.append(base / "Google" / "Chrome" / "Application" / "chrome.exe")
 
     elif system == "Linux":
         for name in (

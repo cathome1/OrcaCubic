@@ -38,6 +38,7 @@ class OrcaCubicConfig:
     camera_transforms: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     timelapse_dir: str = ""
     timelapse_auto: bool = False
+    language: str = "auto"  # "auto" | "en" | "ru"
 
     def sanitized_dict(self) -> dict:
         """Return config dict safe for UI/logging (never exposes full token)."""
@@ -50,6 +51,7 @@ class OrcaCubicConfig:
             "camera_transforms": self.camera_transforms,
             "timelapse_dir": self.timelapse_dir,
             "timelapse_auto": self.timelapse_auto,
+            "language": self.language,
         }
 
 
@@ -78,6 +80,8 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> OrcaCubicConfig:
                 cfg.camera_transforms = ct
             cfg.timelapse_dir = str(raw.get("timelapse_dir", "") or "").strip()
             cfg.timelapse_auto = bool(raw.get("timelapse_auto", False))
+            lang = str(raw.get("language", "auto") or "auto").lower()
+            cfg.language = lang if lang in ("auto", "en", "ru") else "auto"
         except (OSError, ValueError, TypeError):
             pass
 
