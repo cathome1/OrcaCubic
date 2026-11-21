@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.7"
+# version = "0.3.8"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -2046,6 +2046,11 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
     def __init__(self) -> None:
         global _ACTIVE_PAGE
         super().__init__()
+        if _ACTIVE_PAGE is not None and hasattr(_ACTIVE_PAGE, "_mqtt"):
+            try:
+                _ACTIVE_PAGE._mqtt.stop()
+            except Exception:
+                pass
         self._printers: List[Dict[str, Any]] = []
         self._user: Dict[str, Any] = {}
         self._updated_at: str = ""
@@ -2646,14 +2651,14 @@ class OrcaCubicPlugin(orca.base):
         temp_dir = Path(tempfile.gettempdir())
         temp_dir_resolved = temp_dir.resolve()
         fs_read_grants = [
-            str(_PLUGIN_ROOT),
-            str(_PLUGIN_DIR),
-            str(orca_data_dir),
-            str(temp_dir),
+            str(_PLUGIN_ROOT / "*"),
+            str(_PLUGIN_DIR / "*"),
+            str(orca_data_dir / "*"),
+            str(temp_dir / "*"),
         ]
         if temp_dir_resolved != temp_dir:
-            fs_read_grants.append(str(temp_dir_resolved))
-        fs_rw_grants = [str(_DATA_DIR)]
+            fs_read_grants.append(str(temp_dir_resolved / "*"))
+        fs_rw_grants = [str(_DATA_DIR / "*")]
 
         orca.request_permissions(
             fs_read=fs_read_grants,

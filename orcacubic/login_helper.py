@@ -335,30 +335,17 @@ def _launch_browser_cdp_login(
         "--disable-extensions",
     ]
 
-    proc = None
-    last_exc: Optional[Exception] = None
-    for attempt in range(2):
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            break
-        except PermissionError as exc:
-            # OrcaSlicer's audit hook blocks the first call while showing the "Allow?" dialog.
-            last_exc = exc
-            if attempt == 0:
-                time.sleep(0.5)
-                continue
-        except OSError as exc:
-            last_exc = exc
-            break
-    if proc is None:
+    try:
+        proc = subprocess.Popen(cmd)
+    except PermissionError as exc:
         raise AnycubicAuthError(
-            f"Could not launch browser login window ({browser_path.name}): {last_exc}. "
-            "If an OrcaSlicer permission dialog appeared, click Yes and click Sign in again."
-        )
+            f"Browser login requires OrcaSlicer permission ({browser_path.name}). "
+            "Click Yes in the permission dialog, then click Sign in again."
+        ) from exc
+    except OSError as exc:
+        raise AnycubicAuthError(
+            f"Could not launch browser login window ({browser_path.name}): {exc}"
+        ) from exc
 
     deadline = time.monotonic() + timeout
     saw_cdp_ready = False
