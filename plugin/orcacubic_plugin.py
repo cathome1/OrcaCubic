@@ -1487,10 +1487,13 @@ _PAGE_HTML = """<!DOCTYPE html>
   function effectivePrinterStatus(p) {
     if (!p || !p.online) return 'offline';
     if (p.status === 'downloading') return 'downloading';
+    const hasLiveTemps = (p.nozzle_temp !== null && p.nozzle_temp !== undefined) ||
+      (p.bed_temp !== null && p.bed_temp !== undefined);
     if (
       p.status === 'printing' &&
-      (p.progress || 0) === 0 &&
+      hasLiveTemps &&
       (p.current_layer || 0) === 0 &&
+      (p.total_layers || 0) === 0 &&
       (p.remaining_time_min || 0) === 0 &&
       (p.target_nozzle_temp || 0) <= 0 &&
       (p.target_bed_temp || 0) <= 0
@@ -1515,9 +1518,13 @@ _PAGE_HTML = """<!DOCTYPE html>
     const effStatus = (_uploadState && _uploadState.active) ? 'downloading' : effectivePrinterStatus(p);
     const badge = document.getElementById('monitorBadge');
     badge.className = 'badge ' + effStatus;
-    badge.textContent = (_uploadState && _uploadState.active)
-      ? ('Загрузка файла ' + (_uploadState.pct || 0) + '%')
-      : (statusMap[effStatus] || effStatus);
+    if (_uploadState && _uploadState.active) {
+      badge.textContent = 'Загрузка файла ' + (_uploadState.pct || 0) + '%';
+    } else if (effStatus === 'downloading') {
+      badge.textContent = (p.progress || 0) > 0 ? ('Загрузка файла ' + p.progress + '%') : 'Загрузка файла';
+    } else {
+      badge.textContent = statusMap[effStatus] || effStatus;
+    }
     document.getElementById('monitorFile').textContent = (_uploadState && _uploadState.active && _uploadState.text)
       ? _uploadState.text
       : (p.current_file
@@ -1525,7 +1532,7 @@ _PAGE_HTML = """<!DOCTYPE html>
           : (p.firmware_version ? ('Прошивка: ' + p.firmware_version) : 'Нет активного задания'));
     const pct = (_uploadState && _uploadState.active)
       ? (_uploadState.pct || 0)
-      : (effStatus === 'printing' || effStatus === 'paused' ? (p.progress || 0) : 0);
+      : ((effStatus === 'printing' || effStatus === 'paused' || effStatus === 'downloading') ? (p.progress || 0) : 0);
     document.getElementById('monitorProgressBar').style.width = pct + '%';
     document.getElementById('statProgress').textContent = pct + '%';
     document.getElementById('statLayers').textContent = p.total_layers > 0
@@ -1616,7 +1623,7 @@ _PAGE_HTML = """<!DOCTYPE html>
       const effStatus = effectivePrinterStatus(p);
       const statusMap = {
         idle: 'Свободен',
-        downloading: 'Загрузка файла',
+        downloading: (p.progress || 0) > 0 ? ('Загрузка файла ' + p.progress + '%') : 'Загрузка файла',
         printing: 'Печатает ' + p.progress + '%',
         paused: 'Пауза',
         offline: 'Офлайн'

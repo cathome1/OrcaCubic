@@ -245,6 +245,18 @@ def _normalize_printer(raw: Dict[str, Any]) -> PrinterSummary:
         or proj_settings.get("target_hotbed_temp")
     )
 
+    has_live_temps = nozzle_temp is not None or bed_temp is not None
+    if (
+        status == "printing"
+        and has_live_temps
+        and current_layer == 0
+        and total_layers == 0
+        and remaining_time_min == 0
+        and (target_nozzle_temp or 0.0) <= 0.0
+        and (target_bed_temp or 0.0) <= 0.0
+    ):
+        status = "downloading"
+
     if status == "printing" and current_layer == 0 and total_layers > 0 and progress > 0:
         current_layer = max(1, min(total_layers, round(total_layers * progress / 100.0)))
 
