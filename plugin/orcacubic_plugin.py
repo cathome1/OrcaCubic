@@ -50,6 +50,8 @@ from orcacubic.config import (
 )
 from orcacubic.gcode_adapter import adapt_gcode_stream
 from orcacubic.login_helper import (
+    find_chromium_browser,
+    find_login_helper,
     get_required_process_grants,
     launch_login_window,
     pick_folder_dialog,
@@ -1811,7 +1813,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                 "cloud_files": self._cloud_files,
                 "cloud_storage": self._cloud_storage,
                 "default_timelapse_dir": str(_TIMELAPSE_DIR),
-                "has_login_helper": find_login_helper(extra_search_dirs=[_PLUGIN_DIR]) is not None,
+                "has_login_helper": (
+                find_login_helper(extra_search_dirs=[_PLUGIN_DIR]) is not None
+                or find_chromium_browser() is not None
+            ),
                 "notice": notice,
                 "error": error,
                 "info": info,

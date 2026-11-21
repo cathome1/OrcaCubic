@@ -416,6 +416,9 @@ class TestOrcaPluginRegistration(unittest.TestCase):
 
             page = mod.AnycubicCloudPage()
             self.assertIn("OrcaCubic", page.get_ui())
+            page._emit_state()
+            self.assertEqual(page.posted[-1]["type"], "state")
+            self.assertIn("has_login_helper", page.posted[-1])
 
 
 class TestLoginHelperCDP(unittest.TestCase):
