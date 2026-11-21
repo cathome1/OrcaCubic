@@ -406,7 +406,7 @@ class TestOrcaPluginRegistration(unittest.TestCase):
             pkg.register_capabilities()
 
             self.assertEqual(len(registered_caps), 2)
-            self.assertIn("cloud-universe.anycubic.com", requested_perms["network_http"])
+            self.assertIn("https://cloud-universe.anycubic.com", requested_perms["network_http"])
             self.assertTrue(requested_perms["threading"])
 
             agent = mod.AnycubicPrinterAgent()

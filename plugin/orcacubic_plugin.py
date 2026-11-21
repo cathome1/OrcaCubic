@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.6"
+# version = "0.3.7"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -2646,26 +2646,36 @@ class OrcaCubicPlugin(orca.base):
         temp_dir = Path(tempfile.gettempdir())
         temp_dir_resolved = temp_dir.resolve()
         fs_read_grants = [
-            str(_PLUGIN_ROOT / "*"),
-            str(_PLUGIN_DIR / "*"),
-            str(orca_data_dir / "*"),
-            str(temp_dir / "*"),
+            str(_PLUGIN_ROOT),
+            str(_PLUGIN_DIR),
+            str(orca_data_dir),
+            str(temp_dir),
         ]
         if temp_dir_resolved != temp_dir:
-            fs_read_grants.append(str(temp_dir_resolved / "*"))
-        fs_rw_grants = [str(_DATA_DIR), str(_DATA_DIR / "*")]
+            fs_read_grants.append(str(temp_dir_resolved))
+        fs_rw_grants = [str(_DATA_DIR)]
 
         orca.request_permissions(
             fs_read=fs_read_grants,
             fs_readwrite=fs_rw_grants,
             network_http=[
-                "cloud-universe.anycubic.com",
-                "*.amazonaws.com",
-                "*.myqcloud.com",
-                "*.aliyuncs.com",
-                "127.0.0.1",
+                "https://cloud-universe.anycubic.com",
+                "https://workbentch.s3.us-east-2.amazonaws.com",
+                "https://workbentch.s3.eu-central-1.amazonaws.com",
+                "https://workbentch.s3.us-west-2.amazonaws.com",
+                "https://workbentch.s3.ap-southeast-1.amazonaws.com",
+                "https://cdn.anycubic-cloud.anycubic.com",
+                "https://kinesisvideo.eu-central-1.amazonaws.com",
+                "https://kinesisvideo.us-east-2.amazonaws.com",
+                "https://kinesisvideo.us-east-1.amazonaws.com",
+                "https://kinesisvideo.us-west-2.amazonaws.com",
+                "https://kinesisvideo.ap-southeast-1.amazonaws.com",
             ],
-            network_socket=["127.0.0.1", "mqtt-universe.anycubic.com"],
+            network_socket=[
+                "127.0.0.1",
+                "mqtt-universe.anycubic.com",
+                "172.65.173.145",
+            ],
             process=process_grants,
             threading=True,
         )
