@@ -26,16 +26,30 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Ensure sibling `orcacubic` package is importable and freshly reloaded on plugin toggle
-_PLUGIN_DIR = Path(__file__).resolve().parent
-if str(_PLUGIN_DIR) not in sys.path:
-    sys.path.insert(0, str(_PLUGIN_DIR))
-if str(_PLUGIN_DIR.parent) not in sys.path:
-    sys.path.insert(0, str(_PLUGIN_DIR.parent))
+# Ensure sibling `orcacubic` package is importable and freshly reloaded on local plugin toggle
+_THIS_FILE = Path(__file__).resolve()
+_PLUGIN_DIR = _THIS_FILE.parent
 
-for _mod_name in list(sys.modules.keys()):
-    if _mod_name == "orcacubic" or _mod_name.startswith("orcacubic."):
-        sys.modules.pop(_mod_name, None)
+
+def _resolve_plugin_root(path: Path) -> Path:
+    """Return persistent plugin root (outside __whl_extracted__ for cloud .whl installs)."""
+    for parent in path.parents:
+        if parent.name == "__whl_extracted__":
+            return parent.parent
+    return path.parent
+
+
+_PLUGIN_ROOT = _resolve_plugin_root(_THIS_FILE)
+
+if __name__ != "orcacubic.plugin":
+    if str(_PLUGIN_DIR) not in sys.path:
+        sys.path.insert(0, str(_PLUGIN_DIR))
+    if str(_PLUGIN_DIR.parent) not in sys.path:
+        sys.path.insert(0, str(_PLUGIN_DIR.parent))
+
+    for _mod_name in list(sys.modules.keys()):
+        if _mod_name == "orcacubic" or _mod_name.startswith("orcacubic."):
+            sys.modules.pop(_mod_name, None)
 
 import orca  # type: ignore[import-not-found]
 
@@ -57,7 +71,7 @@ from orcacubic.login_helper import (
     pick_folder_dialog,
 )
 
-_DATA_DIR = _PLUGIN_DIR / "data"
+_DATA_DIR = _PLUGIN_ROOT / "data"
 _CONFIG_FILE = _DATA_DIR / "config.json"
 _TIMELAPSE_DIR = _DATA_DIR / "timelapses"
 
@@ -117,6 +131,7 @@ def _extract_gcode_path(params: Any) -> Tuple[Path, Optional[Path]]:
         or getattr(params, "project_name", "")
         or src_path.stem
     )
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp_path = _DATA_DIR / "_tmp_upload.gcode"
     if src_path.suffix.lower() == ".3mf" and zipfile.is_zipfile(src_path):
         with zipfile.ZipFile(src_path, "r") as zf:
@@ -2215,19 +2230,22 @@ class OrcaCubicPlugin(orca.base):
     """Main OrcaSlicer 2.5+ plugin entrypoint."""
 
     def register_capabilities(self) -> None:
-        process_grants = get_required_process_grants(extra_search_dirs=[_PLUGIN_DIR])
+        process_grants = get_required_process_grants(
+            extra_search_dirs=[_PLUGIN_ROOT, _PLUGIN_DIR]
+        )
 
-        orca_data_dir = _PLUGIN_DIR.parent.parent
+        orca_data_dir = _PLUGIN_ROOT.parent.parent
         temp_dir = Path(tempfile.gettempdir())
         temp_dir_resolved = temp_dir.resolve()
         fs_read_grants = [
+            str(_PLUGIN_ROOT / "*"),
             str(_PLUGIN_DIR / "*"),
             str(orca_data_dir / "*"),
             str(temp_dir / "*"),
         ]
         if temp_dir_resolved != temp_dir:
             fs_read_grants.append(str(temp_dir_resolved / "*"))
-        fs_rw_grants = [str(_DATA_DIR / "*")]
+        fs_rw_grants = [str(_DATA_DIR), str(_DATA_DIR / "*")]
 
         orca.request_permissions(
             fs_read=fs_read_grants,
