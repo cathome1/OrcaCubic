@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.DS_Store
+bin/
+dist/
+build/
+*.egg-info/
+.env
+config.json
+data/
+*.gcode
+*.3mf
+*.mp4
+*.webm
