@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.5"
+# version = "0.3.6"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -2015,7 +2015,7 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
   window.addEventListener('DOMContentLoaded', function() {
     applyLanguage(_lang);
-    send({action: 'init'});
+    send({action: 'init', detected_lang: _lang});
     setInterval(function() {
       if (document.visibilityState === 'visible') {
         send({action: 'poll_status'});
@@ -2052,8 +2052,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         self._cloud_files: List[Dict[str, Any]] = []
         self._cloud_storage: Dict[str, Any] = {}
         self._mqtt_live: Dict[int, Dict[str, Any]] = {}
+        self._ui_lang: str = "en"
         self._mqtt = AnycubicMqttWatcher(on_telemetry=self._on_mqtt_telemetry)
         _ACTIVE_PAGE = self
+
+    def _tr(self, en: str, ru: str, cfg: Optional[OrcaCubicConfig] = None) -> str:
+        c = cfg if cfg is not None else load_config(path=_CONFIG_FILE)
+        lang = c.language if c.language in ("en", "ru") else self._ui_lang
+        return ru if lang == "ru" else en
 
     def _on_mqtt_telemetry(self, printer_id: int, patch: Dict[str, Any]) -> None:
         live = self._mqtt_live.setdefault(printer_id, {})
@@ -2189,6 +2195,9 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         action = str(data.get("action") or "")
 
         if action == "init":
+            dl = str(data.get("detected_lang") or "").lower()
+            if dl in ("en", "ru"):
+                self._ui_lang = dl
             cfg = load_config(path=_CONFIG_FILE)
             self._emit_state(cfg=cfg)
             if cfg.token:
@@ -2197,7 +2206,12 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
 
         if action == "login_window":
             reset = bool(data.get("reset_session", False))
-            self._emit_state(info="Открыто окно входа Anycubic Cloud...")
+            self._emit_state(
+                info=self._tr(
+                    "Anycubic Cloud sign-in window opened...",
+                    "Открыто окно входа Anycubic Cloud...",
+                )
+            )
 
             def _do_login() -> None:
                 try:
@@ -2210,7 +2224,12 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     cfg.token = token
                     save_config(cfg, path=_CONFIG_FILE)
                     self._refresh_printers_sync(
-                        cfg, notice="Вход в Anycubic Cloud выполнен успешно!"
+                        cfg,
+                        notice=self._tr(
+                            "Signed in to Anycubic Cloud!",
+                            "Вход в Anycubic Cloud выполнен успешно!",
+                            cfg,
+                        ),
                     )
                 except AnycubicError as exc:
                     self._emit_state(error=str(exc))
@@ -2223,9 +2242,11 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             cfg = load_config(path=_CONFIG_FILE)
             cfg.token = token
             save_config(cfg, path=_CONFIG_FILE)
-            self._emit_state(cfg=cfg, info="Проверка токена...")
+            self._emit_state(cfg=cfg, info=self._tr("Verifying token...", "Проверка токена...", cfg))
             self._run_bg(
-                lambda: self._refresh_printers_sync(cfg, notice="Токен сохранён и проверен.")
+                lambda: self._refresh_printers_sync(
+                    cfg, notice=self._tr("Token saved and verified.", "Токен сохранён и проверен.", cfg)
+                )
             )
             return
 
@@ -2233,26 +2254,44 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             cfg = load_config(path=_CONFIG_FILE)
             cfg.token = ""
             save_config(cfg, path=_CONFIG_FILE)
+            self._mqtt.stop()
+            self._mqtt_live.clear()
             self._printers = []
             self._user = {}
             self._cloud_files = []
             self._cloud_storage = {}
-            self._emit_state(cfg=cfg, notice="Вы вышли из аккаунта Anycubic Cloud.")
+            self._emit_state(
+                cfg=cfg,
+                notice=self._tr(
+                    "Signed out of Anycubic Cloud.",
+                    "Вы вышли из аккаунта Anycubic Cloud.",
+                    cfg,
+                ),
+            )
             return
 
         if action == "refresh_files":
             cfg = load_config(path=_CONFIG_FILE)
             if not cfg.token:
-                self._emit_state(cfg=cfg, error="Сначала войдите в Anycubic Cloud.")
+                self._emit_state(
+                    cfg=cfg,
+                    error=self._tr("Please sign in to Anycubic Cloud first.", "Сначала войдите в Anycubic Cloud.", cfg),
+                )
                 return
-            self._emit_state(cfg=cfg, info="Загрузка списка облачных файлов...")
+            self._emit_state(
+                cfg=cfg,
+                info=self._tr("Loading cloud files...", "Загрузка списка облачных файлов...", cfg),
+            )
 
             def _do_files() -> None:
                 try:
                     client = AnycubicCloudClient(token=cfg.token)
                     self._cloud_storage = client.get_cloud_storage()
                     self._cloud_files = [f.to_dict() for f in client.get_cloud_files(limit=25)]
-                    self._emit_state(cfg=cfg, notice="Список облачных файлов обновлён.")
+                    self._emit_state(
+                        cfg=cfg,
+                        notice=self._tr("Cloud files updated.", "Список облачных файлов обновлён.", cfg),
+                    )
                 except AnycubicError as exc:
                     self._emit_state(cfg=cfg, error=str(exc))
 
@@ -2267,7 +2306,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             furl = str(data.get("url") or "")
             if not cfg.token or fid <= 0:
                 return
-            self._emit_state(cfg=cfg, info=f"Отправка «{fname}» на печать...")
+            self._emit_state(
+                cfg=cfg,
+                info=self._tr(f'Sending "{fname}" to print...', f"Отправка «{fname}» на печать...", cfg),
+            )
 
             def _do_print() -> None:
                 try:
@@ -2282,7 +2324,11 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     )
                     self._emit_state(
                         cfg=cfg,
-                        notice=f"Печать «{fname}» запущена на {printer.name}!",
+                        notice=self._tr(
+                            f'Print "{fname}" started on {printer.name}!',
+                            f"Печать «{fname}» запущена на {printer.name}!",
+                            cfg,
+                        ),
                     )
                 except Exception as exc:
                     print(f"[OrcaCubic] Cloud print failed: {exc!r}", file=sys.stderr, flush=True)
@@ -2297,7 +2343,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             fname = str(data.get("name") or f"#{fid}")
             if not cfg.token or fid <= 0:
                 return
-            self._emit_state(cfg=cfg, info=f"Удаление «{fname}»...")
+            self._emit_state(
+                cfg=cfg,
+                info=self._tr(f'Deleting "{fname}"...', f"Удаление «{fname}»...", cfg),
+            )
 
             def _do_delete() -> None:
                 try:
@@ -2305,7 +2354,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     client.delete_cloud_file(fid)
                     self._cloud_storage = client.get_cloud_storage()
                     self._cloud_files = [f.to_dict() for f in client.get_cloud_files(limit=25)]
-                    self._emit_state(cfg=cfg, notice=f"Файл «{fname}» удалён из облака.")
+                    self._emit_state(
+                        cfg=cfg,
+                        notice=self._tr(
+                            f'Deleted "{fname}" from cloud.',
+                            f"Файл «{fname}» удалён из облака.",
+                            cfg,
+                        ),
+                    )
                 except AnycubicError as exc:
                     self._emit_state(cfg=cfg, error=str(exc))
 
@@ -2314,8 +2370,15 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
 
         if action == "refresh_printers":
             cfg = load_config(path=_CONFIG_FILE)
-            self._emit_state(cfg=cfg, info="Обновление статуса принтеров...")
-            self._run_bg(lambda: self._refresh_printers_sync(cfg, notice="Статус обновлён."))
+            self._emit_state(
+                cfg=cfg,
+                info=self._tr("Refreshing printer status...", "Обновление статуса принтеров...", cfg),
+            )
+            self._run_bg(
+                lambda: self._refresh_printers_sync(
+                    cfg, notice=self._tr("Status updated.", "Статус обновлён.", cfg)
+                )
+            )
             return
 
         if action == "poll_status":
@@ -2328,6 +2391,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     client = AnycubicCloudClient(token=cfg.token)
                     printers = client.get_printers_with_live_status()
                     self._printers = [p.to_dict() for p in printers]
+                    for item in self._printers:
+                        pid = item.get("printer_id")
+                        if item.get("status") in ("idle", "offline"):
+                            self._mqtt_live.pop(pid, None)
+                        elif pid in self._mqtt_live:
+                            for k, v in self._mqtt_live[pid].items():
+                                if item.get(k) is None:
+                                    item[k] = v
                     self._updated_at = datetime.datetime.now().strftime("%H:%M:%S")
                     self._emit_state(cfg=cfg)
                 except AnycubicError:
@@ -2342,7 +2413,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             param = data.get("param")
             if not cfg.token or cmd not in ("pause", "resume", "stop", "print_speed"):
                 return
-            self._emit_state(cfg=cfg, info="Отправка команды принтеру...")
+            self._emit_state(
+                cfg=cfg,
+                info=self._tr("Sending command to printer...", "Отправка команды принтеру...", cfg),
+            )
 
             def _do_ctrl() -> None:
                 try:
@@ -2351,19 +2425,19 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     pid = printer.printer_id
                     if cmd == "pause":
                         client.pause_print(printer_id=pid)
-                        msg = f"Пауза отправлена на {printer.name}."
+                        msg = self._tr(f"Pause sent to {printer.name}.", f"Пауза отправлена на {printer.name}.", cfg)
                     elif cmd == "resume":
                         client.resume_print(printer_id=pid)
-                        msg = f"Печать продолжена на {printer.name}."
+                        msg = self._tr(f"Print resumed on {printer.name}.", f"Печать продолжена на {printer.name}.", cfg)
                     elif cmd == "stop":
                         client.stop_print(printer_id=pid)
-                        msg = f"Печать остановлена на {printer.name}."
+                        msg = self._tr(f"Print stopped on {printer.name}.", f"Печать остановлена на {printer.name}.", cfg)
                     else:
                         speed_mode = max(1, min(3, int(str(param))))
                         client.update_print_settings(
                             printer_id=pid, settings={"print_speed_mode": speed_mode}
                         )
-                        msg = f"Скорость печати обновлена на {printer.name}."
+                        msg = self._tr(f"Print speed updated on {printer.name}.", f"Скорость печати обновлена на {printer.name}.", cfg)
                     self._refresh_printers_sync(cfg, notice=msg)
                 except AnycubicError as exc:
                     self._emit_state(cfg=cfg, error=str(exc))
@@ -2374,7 +2448,12 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         if action == "camera_open":
             cfg = load_config(path=_CONFIG_FILE)
             if not cfg.token:
-                self.post_message({"type": "camera_error", "error": "Сначала войдите в Anycubic Cloud."})
+                self.post_message(
+                    {
+                        "type": "camera_error",
+                        "error": self._tr("Please sign in to Anycubic Cloud first.", "Сначала войдите в Anycubic Cloud.", cfg),
+                    }
+                )
                 return
 
             def _do_cam_open() -> None:
@@ -2386,7 +2465,12 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                 except AnycubicError as exc:
                     self.post_message({"type": "camera_error", "error": str(exc)})
                 except Exception as exc:
-                    self.post_message({"type": "camera_error", "error": f"Ошибка камеры: {exc}"})
+                    self.post_message(
+                        {
+                            "type": "camera_error",
+                            "error": self._tr(f"Camera error: {exc}", f"Ошибка камеры: {exc}", cfg),
+                        }
+                    )
 
             self._run_bg(_do_cam_open)
             return
@@ -2428,9 +2512,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                         cfg = load_config(path=_CONFIG_FILE)
                         cfg.timelapse_dir = picked
                         save_config(cfg, path=_CONFIG_FILE)
-                        self._emit_state(cfg=cfg, notice=f"Папка таймлапсов: {picked}")
+                        self._emit_state(
+                            cfg=cfg,
+                            notice=self._tr(f"Timelapse folder: {picked}", f"Папка таймлапсов: {picked}", cfg),
+                        )
                 except Exception as exc:
-                    self._emit_state(error=f"Не удалось открыть проводник: {exc}")
+                    self._emit_state(
+                        error=self._tr(f"Failed to open folder picker: {exc}", f"Не удалось открыть проводник: {exc}")
+                    )
 
             self._run_bg(_do_pick)
             return
@@ -2441,9 +2530,17 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             save_config(cfg, path=_CONFIG_FILE)
             self._emit_state(
                 cfg=cfg,
-                notice="Автозапуск и автосохранение таймлапса включены."
+                notice=self._tr(
+                    "Timelapse auto-start & auto-save enabled.",
+                    "Автозапуск и автосохранение таймлапса включены.",
+                    cfg,
+                )
                 if cfg.timelapse_auto
-                else "Автозапуск таймлапса выключен.",
+                else self._tr(
+                    "Timelapse auto-start disabled.",
+                    "Автозапуск таймлапса выключен.",
+                    cfg,
+                ),
             )
             return
 
@@ -2453,7 +2550,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             cfg.timelapse_dir = raw_path
             save_config(cfg, path=_CONFIG_FILE)
             shown = str(Path(raw_path).expanduser()) if raw_path else str(_TIMELAPSE_DIR)
-            self._emit_state(cfg=cfg, notice=f"Папка таймлапсов: {shown}")
+            self._emit_state(
+                cfg=cfg,
+                notice=self._tr(f"Timelapse folder: {shown}", f"Папка таймлапсов: {shown}", cfg),
+            )
             return
 
         if action == "set_language":
@@ -2508,8 +2608,10 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                 cfg.printer_id = int(pid)
                 cfg.printer_name = str(data.get("printer_name") or "")
                 save_config(cfg, path=_CONFIG_FILE)
+                pname = cfg.printer_name or cfg.printer_id
                 self._emit_state(
-                    cfg=cfg, notice=f"Выбран принтер: {cfg.printer_name or cfg.printer_id}"
+                    cfg=cfg,
+                    notice=self._tr(f"Selected printer: {pname}", f"Выбран принтер: {pname}", cfg),
                 )
             return
 
@@ -2520,11 +2622,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                 cfg.default_mode = mode
                 save_config(cfg, path=_CONFIG_FILE)
                 label = (
-                    "Отправить на печать через облако"
+                    self._tr("Upload & print via cloud", "Отправить на печать через облако", cfg)
                     if mode == "print"
-                    else "Только загрузить в облако"
+                    else self._tr("Upload to cloud only", "Только загрузить в облако", cfg)
                 )
-                self._emit_state(cfg=cfg, notice=f"Режим обновлён: {label}")
+                self._emit_state(
+                    cfg=cfg,
+                    notice=self._tr(f"Mode updated: {label}", f"Режим обновлён: {label}", cfg),
+                )
             return
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -295,29 +296,19 @@ def _launch_macos_helper(
     )
 
 
-def _cdp_list_targets(port: int, timeout: float = 1.5) -> list[dict[str, Any]]:
-    """Fetch /json/list from local CDP over raw loopback socket (avoids urllib URL audit spam)."""
-    req = (
-        f"GET /json/list HTTP/1.1\r\n"
-        f"Host: 127.0.0.1:{port}\r\n"
-        f"Connection: close\r\n"
-        f"\r\n"
-    ).encode("ascii")
-    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall(req)
-        chunks: list[bytes] = []
-        while True:
-            chunk = sock.recv(8192)
-            if not chunk:
-                break
-            chunks.append(chunk)
-    raw = b"".join(chunks)
-    if b"\r\n\r\n" not in raw:
-        return []
-    body = raw.split(b"\r\n\r\n", 1)[1].decode("utf-8", errors="replace").strip()
-    data = json.loads(body)
-    return data if isinstance(data, list) else []
+def _cdp_list_targets(port: int, timeout: float = 2.0) -> list[dict[str, Any]]:
+    """Fetch /json/list from local CDP via http.client (respects Content-Length, no urllib audit)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    try:
+        conn.request("GET", "/json/list")
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8", errors="replace").strip()
+        if not body:
+            return []
+        data = json.loads(body)
+        return data if isinstance(data, list) else []
+    finally:
+        conn.close()
 
 
 def _launch_browser_cdp_login(
