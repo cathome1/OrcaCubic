@@ -133,10 +133,15 @@ def get_required_process_grants(
     return grants
 
 
-def _pick_free_port() -> int:
+def _pick_cdp_port(preferred: int = 19222) -> int:
+    """Prefer a fixed localhost port so OrcaSlicer's ProcessCreate grant stays stable."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+        try:
+            s.bind(("127.0.0.1", preferred))
+            return preferred
+        except OSError:
+            s.bind(("127.0.0.1", 0))
+            return int(s.getsockname()[1])
 
 
 def _recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -297,12 +302,11 @@ def _launch_browser_cdp_login(
     profile_dir: Optional[Path] = None,
 ) -> str:
     """Open Edge/Chrome in standalone --app mode and capture XX-Token via local CDP."""
-    port = _pick_free_port()
+    port = _pick_cdp_port()
     base_profile = profile_dir or (Path(tempfile.gettempdir()) / "orcacubic_login_profile")
-    if reset_session:
-        user_data_dir = base_profile.parent / f"{base_profile.name}_{int(time.time())}"
-    else:
-        user_data_dir = base_profile
+    if reset_session and base_profile.exists():
+        shutil.rmtree(base_profile, ignore_errors=True)
+    user_data_dir = base_profile
 
     cmd = [
         str(browser_path),
@@ -315,16 +319,30 @@ def _launch_browser_cdp_login(
         "--disable-extensions",
     ]
 
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError as exc:
+    proc = None
+    last_exc: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            break
+        except PermissionError as exc:
+            # OrcaSlicer's audit hook blocks the first call while showing the "Allow?" dialog.
+            last_exc = exc
+            if attempt == 0:
+                time.sleep(0.5)
+                continue
+        except OSError as exc:
+            last_exc = exc
+            break
+    if proc is None:
         raise AnycubicAuthError(
-            f"Не удалось открыть окно браузера ({browser_path.name}): {exc}"
-        ) from exc
+            f"Не удалось открыть окно браузера ({browser_path.name}): {last_exc}. "
+            "Если появилось окно разрешения OrcaSlicer — нажмите «Да» и повторите клик «Войти»."
+        )
 
     deadline = time.monotonic() + timeout
     saw_cdp_ready = False
