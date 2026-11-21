@@ -197,17 +197,26 @@ def _normalize_printer(raw: Dict[str, Any]) -> PrinterSummary:
         remaining_time_min = _to_int(raw.get("remain_time"), 0)
         project_id = _to_int(raw.get("project_id"), 0)
 
+    raw_reason = str(raw.get("reason") or "").lower()
+    raw_state_l = raw_state.lower()
+
     if not online:
         status = "offline"
     elif (
+        (not isinstance(is_printing, bool) and is_printing in (4, "4", "downloading"))
+        or raw_state_l in ("downloading", "download", "receiving", "uploading")
+        or raw_reason in ("downloading", "download", "receiving")
+    ):
+        status = "downloading"
+    elif (
         is_printing is True
         or (not isinstance(is_printing, bool) and is_printing in (2, "2", "printing"))
-        or raw_state.lower() == "printing"
+        or raw_state_l == "printing"
     ):
         status = "printing"
     elif (
         not isinstance(is_printing, bool) and is_printing in (3, "3", "paused")
-    ) or raw_state.lower() == "paused":
+    ) or raw_state_l == "paused":
         status = "paused"
     else:
         status = "idle"

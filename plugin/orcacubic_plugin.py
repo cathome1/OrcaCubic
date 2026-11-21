@@ -282,7 +282,9 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
         subtask_name = ""
 
         if st is not None:
-            if st.status == "printing":
+            if st.status == "downloading":
+                gcode_state = "PREPARE"
+            elif st.status == "printing":
                 gcode_state = "RUNNING"
             elif st.status == "paused":
                 gcode_state = "PAUSE"
@@ -636,14 +638,39 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
         cancel_fn: Any = None,
     ) -> int:
         def report(pct: int, msg: str) -> None:
+            pct_i = max(0, min(100, int(pct)))
             if callable(update_fn):
+                # OrcaSlicer PrintJob::update_fn(stage, code, info):
+                # stage 0=Create(20%), 1=Upload(30..70% via code 0..100 + info),
+                # 4=Sending(97%), 5=Finished(100%).
+                if pct_i < 10:
+                    stage, code, info = 0, 0, str(msg)
+                elif pct_i < 88:
+                    upload_pct = max(0, min(100, round((pct_i - 10) * 100 / 78)))
+                    stage, code, info = 1, upload_pct, str(msg)
+                elif pct_i < 100:
+                    stage, code, info = 4, 0, str(msg)
+                else:
+                    stage, code, info = 5, 0, "1"
                 try:
-                    update_fn(int(pct), 0, str(msg))
+                    update_fn(stage, code, info)
                 except TypeError:
                     try:
-                        update_fn(int(pct), str(msg))
+                        update_fn(pct_i, str(msg))
                     except Exception:
                         pass
+            if _ACTIVE_PAGE is not None:
+                try:
+                    _ACTIVE_PAGE.post_message(
+                        {
+                            "type": "upload_progress",
+                            "active": pct_i < 100,
+                            "pct": pct_i,
+                            "text": str(msg),
+                        }
+                    )
+                except Exception:
+                    pass
 
         def is_cancelled() -> bool:
             if callable(cancel_fn):
@@ -732,6 +759,13 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
             report(0, f"Неожиданная ошибка OrcaCubic: {exc}")
             return ORCA_ERROR_GENERIC
         finally:
+            if _ACTIVE_PAGE is not None:
+                try:
+                    _ACTIVE_PAGE.post_message(
+                        {"type": "upload_progress", "active": False, "pct": 100, "text": ""}
+                    )
+                except Exception:
+                    pass
             if tmp_to_cleanup is not None:
                 try:
                     tmp_to_cleanup.write_bytes(b"")
@@ -863,6 +897,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     font-weight: 600;
   }
   .badge.idle { background: rgba(0,184,148,0.2); color: #55efc4; }
+  .badge.downloading { background: rgba(116,185,255,0.2); color: #74b9ff; }
   .badge.printing { background: rgba(253,203,110,0.2); color: #ffeaa7; }
   .badge.paused { background: rgba(253,203,110,0.25); color: #ffeaa7; }
   .badge.offline { background: rgba(225,112,85,0.2); color: #fab1a0; }
@@ -1446,26 +1481,55 @@ _PAGE_HTML = """<!DOCTYPE html>
     const mm = String(eta.getMinutes()).padStart(2, '0');
     return remainMin + ' мин (' + hh + ':' + mm + ')';
   }
+  let _uploadState = null;
+  function effectivePrinterStatus(p) {
+    if (!p || !p.online) return 'offline';
+    if (p.status === 'downloading') return 'downloading';
+    if (
+      p.status === 'printing' &&
+      (p.progress || 0) === 0 &&
+      (p.current_layer || 0) === 0 &&
+      (p.remaining_time_min || 0) === 0 &&
+      (p.target_nozzle_temp || 0) <= 0 &&
+      (p.target_bed_temp || 0) <= 0
+    ) {
+      return 'downloading';
+    }
+    return p.status || 'idle';
+  }
   function renderMonitor(printers, selectedId) {
     const card = document.getElementById('monitorCard');
     const p = printers.find(function(x) { return x.printer_id === selectedId; }) || printers[0];
     if (!p) { card.style.display = 'none'; return; }
     card.style.display = 'block';
     document.getElementById('monitorTitle').textContent = p.name;
-    const statusMap = { idle: 'Свободен', printing: 'Печатает', paused: 'Пауза', offline: 'Офлайн' };
+    const statusMap = {
+      idle: 'Свободен',
+      downloading: 'Загрузка файла',
+      printing: 'Печатает',
+      paused: 'Пауза',
+      offline: 'Офлайн'
+    };
+    const effStatus = (_uploadState && _uploadState.active) ? 'downloading' : effectivePrinterStatus(p);
     const badge = document.getElementById('monitorBadge');
-    badge.className = 'badge ' + (p.online ? p.status : 'offline');
-    badge.textContent = statusMap[p.status] || p.status;
-    document.getElementById('monitorFile').textContent = p.current_file
-      ? ('Файл: ' + p.current_file)
-      : (p.firmware_version ? ('Прошивка: ' + p.firmware_version) : 'Нет активного задания');
-    const pct = p.status === 'printing' || p.status === 'paused' ? (p.progress || 0) : 0;
+    badge.className = 'badge ' + effStatus;
+    badge.textContent = (_uploadState && _uploadState.active)
+      ? ('Загрузка файла ' + (_uploadState.pct || 0) + '%')
+      : (statusMap[effStatus] || effStatus);
+    document.getElementById('monitorFile').textContent = (_uploadState && _uploadState.active && _uploadState.text)
+      ? _uploadState.text
+      : (p.current_file
+          ? ('Файл: ' + p.current_file)
+          : (p.firmware_version ? ('Прошивка: ' + p.firmware_version) : 'Нет активного задания'));
+    const pct = (_uploadState && _uploadState.active)
+      ? (_uploadState.pct || 0)
+      : (effStatus === 'printing' || effStatus === 'paused' ? (p.progress || 0) : 0);
     document.getElementById('monitorProgressBar').style.width = pct + '%';
     document.getElementById('statProgress').textContent = pct + '%';
     document.getElementById('statLayers').textContent = p.total_layers > 0
       ? (p.current_layer + ' / ' + p.total_layers)
       : '—';
-    document.getElementById('statRemain').textContent = (p.status === 'printing' || p.status === 'paused')
+    document.getElementById('statRemain').textContent = (effStatus === 'printing' || effStatus === 'paused')
       ? formatEta(p.remaining_time_min)
       : '—';
     const nt = p.nozzle_temp !== null && p.nozzle_temp !== undefined ? Math.round(p.nozzle_temp) : null;
@@ -1479,11 +1543,11 @@ _PAGE_HTML = """<!DOCTYPE html>
     document.getElementById('btnPause').style.display = p.status === 'printing' ? '' : 'none';
     document.getElementById('btnResume').style.display = p.status === 'paused' ? '' : 'none';
     document.getElementById('btnStop').disabled = !activeJob;
-    document.getElementById('speedSelect').disabled = p.status !== 'printing';
+    document.getElementById('speedSelect').disabled = effStatus !== 'printing';
     const wasActive = (_tlPrevPrinterStatus === 'printing' || _tlPrevPrinterStatus === 'paused');
-    _tlPrevPrinterStatus = p.status || '';
+    _tlPrevPrinterStatus = effStatus;
 
-    if (_tlRecorder && _tlMode === 'layer' && p.status === 'printing' && p.current_layer > 0) {
+    if (_tlRecorder && _tlMode === 'layer' && effStatus === 'printing' && p.current_layer > 0) {
       if (_tlLastLayer !== p.current_layer) {
         _tlLastLayer = p.current_layer;
         _captureTimelapseFrame();
@@ -1491,7 +1555,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     }
 
     // Auto-start timelapse when print starts (if checkbox enabled & camera video is live)
-    if (_tlAutoEnabled && !_tlRecorder && p.status === 'printing') {
+    if (_tlAutoEnabled && !_tlRecorder && effStatus === 'printing') {
       const vid = document.getElementById('camVideo');
       if (vid && vid.videoWidth > 0 && vid.videoHeight > 0) {
         startTimelapse();
@@ -1499,7 +1563,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     }
 
     // Auto-save timelapse when print finishes (printing/paused -> idle)
-    if (_tlRecorder && wasActive && p.status === 'idle') {
+    if (_tlRecorder && wasActive && effStatus === 'idle') {
       stopTimelapse();
     }
   }
@@ -1547,8 +1611,15 @@ _PAGE_HTML = """<!DOCTYPE html>
       div.onclick = function() {
         send({action: 'select_printer', printer_id: p.printer_id, printer_name: p.name});
       };
-      const statusMap = { idle: 'Свободен', printing: 'Печатает ' + p.progress + '%', paused: 'Пауза', offline: 'Офлайн' };
-      const badgeCls = p.online ? (p.status === 'printing' ? 'printing' : (p.status === 'paused' ? 'paused' : 'idle')) : 'offline';
+      const effStatus = effectivePrinterStatus(p);
+      const statusMap = {
+        idle: 'Свободен',
+        downloading: 'Загрузка файла',
+        printing: 'Печатает ' + p.progress + '%',
+        paused: 'Пауза',
+        offline: 'Офлайн'
+      };
+      const badgeCls = effStatus;
       const tempParts = [];
       if (p.nozzle_temp !== null && p.nozzle_temp !== undefined) tempParts.push('Сопло ' + Math.round(p.nozzle_temp) + '°C');
       if (p.bed_temp !== null && p.bed_temp !== undefined) tempParts.push('Стол ' + Math.round(p.bed_temp) + '°C');
@@ -1556,7 +1627,7 @@ _PAGE_HTML = """<!DOCTYPE html>
       div.innerHTML =
         '<div><strong>' + escapeHtml(p.name) + '</strong>' +
         '<div class="sub">' + escapeHtml(meta) + '</div></div>' +
-        '<span class="badge ' + badgeCls + '">' + (statusMap[p.status] || p.status) + '</span>';
+        '<span class="badge ' + badgeCls + '">' + (statusMap[effStatus] || effStatus) + '</span>';
       listEl.appendChild(div);
     });
   }
@@ -1660,6 +1731,10 @@ _PAGE_HTML = """<!DOCTYPE html>
       if (msg && msg.type === 'state') renderState(msg);
       else if (msg && msg.type === 'camera_session') connectKvsWebRtc(msg.session);
       else if (msg && msg.type === 'camera_error') setCamUi(true, msg.error || 'Не удалось включить камеру.');
+      else if (msg && msg.type === 'upload_progress') {
+        _uploadState = msg.active ? { active: true, pct: msg.pct || 0, text: msg.text || '' } : null;
+        if (_lastState) renderMonitor(_lastState.printers || [], _lastState.config && _lastState.config.printer_id);
+      }
       else if (msg && msg.type === 'timelapse_saved') {
         document.getElementById('tlStatus').textContent = msg.text || 'Таймлапс сохранён.';
         showBanner('ok', msg.text || 'Таймлапс сохранён.');
