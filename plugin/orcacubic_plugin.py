@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.2"
+# version = "0.3.3"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -2051,10 +2051,17 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         self._updated_at: str = ""
         self._cloud_files: List[Dict[str, Any]] = []
         self._cloud_storage: Dict[str, Any] = {}
+        self._mqtt_live: Dict[int, Dict[str, Any]] = {}
         self._mqtt = AnycubicMqttWatcher(on_telemetry=self._on_mqtt_telemetry)
         _ACTIVE_PAGE = self
 
     def _on_mqtt_telemetry(self, printer_id: int, patch: Dict[str, Any]) -> None:
+        live = self._mqtt_live.setdefault(printer_id, {})
+        for k in ("target_nozzle_temp", "target_bed_temp"):
+            if k in patch:
+                live[k] = patch[k]
+        if patch.get("status") == "idle":
+            self._mqtt_live.pop(printer_id, None)
         updated = False
         for item in self._printers:
             if item.get("printer_id") == printer_id:
@@ -2129,6 +2136,14 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             self._user = client.get_user_info()
             printers = client.get_printers_with_live_status()
             self._printers = [p.to_dict() for p in printers]
+            for item in self._printers:
+                pid = item.get("printer_id")
+                if item.get("status") in ("idle", "offline"):
+                    self._mqtt_live.pop(pid, None)
+                elif pid in self._mqtt_live:
+                    for k, v in self._mqtt_live[pid].items():
+                        if item.get(k) is None:
+                            item[k] = v
             self._updated_at = datetime.datetime.now().strftime("%H:%M:%S")
             mqtt_targets = [
                 (p.printer_id, p.machine_type, p.printer_key)

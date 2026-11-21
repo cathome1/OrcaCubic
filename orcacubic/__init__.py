@@ -1,6 +1,6 @@
 """OrcaCubic — Native Anycubic Cloud plugin for OrcaSlicer 2.5+ (macOS / Windows / Linux)."""
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 # When imported as a wheel entry package inside OrcaSlicer 2.5+, register the plugin automatically.
 try:

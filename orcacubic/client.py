@@ -338,9 +338,6 @@ class _ChunkedFileReader:
         self._fp.close()
 
 
-_SLICE_TEMP_CACHE: Dict[Tuple[int, int], Tuple[Optional[float], Optional[float]]] = {}
-
-
 class AnycubicCloudClient:
     """Synchronous Anycubic Cloud REST client (stdlib only, zero dependencies)."""
 
@@ -456,50 +453,7 @@ class AnycubicCloudClient:
         data = resp.get("data")
         if not isinstance(data, dict):
             raise AnycubicError(f"Принтер #{printer_id} не найден в Anycubic Cloud.")
-        summary = _normalize_printer(data)
-        if (
-            summary.status in ("printing", "paused")
-            and (summary.target_nozzle_temp is None or summary.target_bed_temp is None)
-        ):
-            cache_key = (int(printer_id), int(summary.project_id))
-            cached_temps = _SLICE_TEMP_CACHE.get(cache_key)
-            if cached_temps is None:
-                t_noz, t_bed = self._fetch_active_slice_temps(int(printer_id))
-                if t_noz is not None or t_bed is not None:
-                    _SLICE_TEMP_CACHE[cache_key] = (t_noz, t_bed)
-                    cached_temps = (t_noz, t_bed)
-            if cached_temps is not None:
-                if summary.target_nozzle_temp is None and cached_temps[0] is not None:
-                    summary.target_nozzle_temp = cached_temps[0]
-                if summary.target_bed_temp is None and cached_temps[1] is not None:
-                    summary.target_bed_temp = cached_temps[1]
-        return summary
-
-    def _fetch_active_slice_temps(
-        self, printer_id: int
-    ) -> Tuple[Optional[float], Optional[float]]:
-        """Read target nozzle/bed temps from active project's slice_param (REST fallback)."""
-        try:
-            resp = self._request_json(
-                "GET",
-                EP_GET_PROJECTS,
-                query={"printer_id": str(printer_id), "print_status": "1", "limit": "1"},
-            )
-            items = resp.get("data")
-            if isinstance(items, list):
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    sp = item.get("slice_param")
-                    if isinstance(sp, str) and sp.startswith("{"):
-                        sp = json.loads(sp)
-                    if isinstance(sp, dict):
-                        t_noz = _to_float(sp.get("temperature") or sp.get("nozzle_temperature"))
-                        t_bed = _to_float(sp.get("bed_temperature") or sp.get("hotbed_temperature"))
-                        return t_noz, t_bed
-        except Exception:
-            pass
-        return None, None
+        return _normalize_printer(data)
 
     def get_printers_with_live_status(self) -> List[PrinterSummary]:
         """Fetch printers list and enrich each with live /v2/printer/info status."""
