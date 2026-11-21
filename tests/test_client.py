@@ -415,10 +415,40 @@ class TestOrcaPluginRegistration(unittest.TestCase):
             self.assertEqual(info.name, "Anycubic Cloud")
 
             page = mod.AnycubicCloudPage()
-            self.assertIn("OrcaCubic", page.get_ui())
+            html_ui = page.get_ui()
+            self.assertIn("OrcaCubic", html_ui)
             page._emit_state()
             self.assertEqual(page.posted[-1]["type"], "state")
             self.assertIn("has_login_helper", page.posted[-1])
+
+            # Verify embedded JS has zero syntax errors when jsc or node is available
+            import re
+            import shutil
+            import subprocess
+
+            m = re.search(r"<script>(.*?)</script>", html_ui, re.S)
+            self.assertIsNotNone(m)
+            js_code = m.group(1)
+            jsc = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
+            node = shutil.which("node")
+            if Path(jsc).is_file():
+                with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as tf:
+                    tf.write("new Function(" + json.dumps(js_code) + ");\n")
+                    tmp_js = tf.name
+                try:
+                    proc = subprocess.run([jsc, tmp_js], capture_output=True, text=True)
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                finally:
+                    Path(tmp_js).unlink(missing_ok=True)
+            elif node:
+                with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as tf:
+                    tf.write(js_code)
+                    tmp_js = tf.name
+                try:
+                    proc = subprocess.run([node, "--check", tmp_js], capture_output=True, text=True)
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                finally:
+                    Path(tmp_js).unlink(missing_ok=True)
 
 
 class TestLoginHelperCDP(unittest.TestCase):
