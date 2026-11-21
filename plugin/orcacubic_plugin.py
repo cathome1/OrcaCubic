@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.0"
+# version = "0.3.1"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -1177,7 +1177,31 @@ _PAGE_HTML = """<!DOCTYPE html>
       min_short: 'min',
       confirm_print: 'Start printing "{name}" on the selected printer?',
       confirm_delete: 'Delete "{name}" from Anycubic Cloud?',
-      confirm_stop: 'Stop the current print on the selected printer?'
+      confirm_stop: 'Stop the current print on the selected printer?',
+      cam_reconnecting: 'Reconnecting to Anycubic Cloud camera...',
+      cam_connecting: 'Connecting to Anycubic Cloud camera...',
+      cam_ws_connecting: 'Connecting WebSocket to AWS KVS ({region})...',
+      cam_active: 'Camera active ({region})',
+      cam_ice_checking: 'Establishing video stream (ICE checking)...',
+      cam_dropped_retry: 'Camera connection lost ({st}), reconnecting ({n}/2)...',
+      cam_dropped_final: 'Camera connection lost ({st}). Click "Stop camera" and "Start camera".',
+      cam_waiting_printer: 'Waiting for printer response (attempt {n}/3)...',
+      cam_ws_open: 'WebSocket open, sending SDP_OFFER...',
+      cam_sdp_answer: 'Printer answered (SDP_ANSWER), starting video...',
+      cam_ws_closed: 'WebSocket closed (code {code}{reason}).',
+      cam_ws_error: 'WebSocket error connecting to AWS KVS.',
+      cam_webrtc_error: 'WebRTC error: ',
+      cam_failed: 'Failed to start camera.',
+      tl_recording: 'Recording: {n} frames',
+      tl_wait_video: 'Wait for camera video to appear first.',
+      tl_no_recorder: 'MediaRecorder is not supported in this WebView.',
+      tl_no_frames: 'Failed to capture frames.',
+      tl_saving: 'Saving timelapse ({n} frames)...',
+      tl_encode_err: 'Failed to encode timelapse.',
+      tl_layer_mode: 'Layer-change mode: {n} frames',
+      tl_park_wait: 'Waiting for head park...',
+      tl_saved_default: 'Timelapse saved.',
+      enter_token: 'Enter XX-Token.'
     },
     ru: {
       checking_status: 'Проверка состояния...',
@@ -1255,7 +1279,31 @@ _PAGE_HTML = """<!DOCTYPE html>
       min_short: 'мин',
       confirm_print: 'Запустить печать «{name}» на выбранном принтере?',
       confirm_delete: 'Удалить «{name}» из Anycubic Cloud?',
-      confirm_stop: 'Остановить текущую печать на выбранном принтере?'
+      confirm_stop: 'Остановить текущую печать на выбранном принтере?',
+      cam_reconnecting: 'Переподключение к камере Anycubic Cloud...',
+      cam_connecting: 'Подключение к камере Anycubic Cloud...',
+      cam_ws_connecting: 'Подключение WebSocket к AWS KVS ({region})...',
+      cam_active: 'Камера активна ({region})',
+      cam_ice_checking: 'Установка видеопотока (ICE checking)...',
+      cam_dropped_retry: 'Связь с камерой прервалась ({st}), переподключение ({n}/2)...',
+      cam_dropped_final: 'Соединение с камерой прервано ({st}). Нажмите «Выключить» и «Включить камеру».',
+      cam_waiting_printer: 'Ожидание ответа от принтера (попытка {n}/3)...',
+      cam_ws_open: 'WebSocket открыт, отправка SDP_OFFER...',
+      cam_sdp_answer: 'Принтер ответил (SDP_ANSWER), запуск видео...',
+      cam_ws_closed: 'WebSocket закрыт (код {code}{reason}).',
+      cam_ws_error: 'Ошибка WebSocket подключения к AWS KVS.',
+      cam_webrtc_error: 'Ошибка WebRTC: ',
+      cam_failed: 'Не удалось включить камеру.',
+      tl_recording: 'Идёт запись: {n} кадр.',
+      tl_wait_video: 'Сначала дождитесь появления видео с камеры.',
+      tl_no_recorder: 'MediaRecorder не поддерживается в этом WebView.',
+      tl_no_frames: 'Не удалось записать кадры.',
+      tl_saving: 'Сохранение таймлапса ({n} кадр.)...',
+      tl_encode_err: 'Ошибка кодирования таймлапса.',
+      tl_layer_mode: 'Режим «По смене слоя»: {n} кадр.',
+      tl_park_wait: 'Ожидание парковки головы...',
+      tl_saved_default: 'Таймлапс сохранён.',
+      enter_token: 'Введите XX-Token.'
     }
   };
   let _lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -1388,7 +1436,7 @@ _PAGE_HTML = """<!DOCTYPE html>
   let _camReconnectCount = 0;
   function startCamera(isRetry) {
     if (!isRetry) _camReconnectCount = 0;
-    setCamUi(true, isRetry ? 'Переподключение к камере Anycubic Cloud...' : 'Подключение к камере Anycubic Cloud...');
+    setCamUi(true, isRetry ? t('cam_reconnecting') : t('cam_connecting'));
     send({action: 'camera_open'});
   }
   let _tlRecorder = null;
@@ -1435,7 +1483,7 @@ _PAGE_HTML = """<!DOCTYPE html>
     _drawLeveledFrame(_tlCtx, vid, _tlCanvas.width, _tlCanvas.height);
     _tlFrames += 1;
     _tlLastCaptureTs = Date.now();
-    document.getElementById('tlStatus').textContent = 'Идёт запись: ' + _tlFrames + ' кадр.';
+    document.getElementById('tlStatus').textContent = t('tl_recording').replace('{n}', _tlFrames);
     setTimeout(function() {
       if (_tlRecorder && _tlRecorder.state === 'recording') {
         try { _tlRecorder.pause(); } catch (e) {}
@@ -1467,11 +1515,11 @@ _PAGE_HTML = """<!DOCTYPE html>
   function startTimelapse() {
     const vid = document.getElementById('camVideo');
     if (!vid || !vid.videoWidth || !vid.videoHeight) {
-      document.getElementById('tlStatus').textContent = 'Сначала дождитесь появления видео с камеры.';
+      document.getElementById('tlStatus').textContent = t('tl_wait_video');
       return;
     }
     if (typeof MediaRecorder === 'undefined') {
-      document.getElementById('tlStatus').textContent = 'MediaRecorder не поддерживается в этом WebView.';
+      document.getElementById('tlStatus').textContent = t('tl_no_recorder');
       return;
     }
     const w = vid.videoWidth;
@@ -1497,19 +1545,19 @@ _PAGE_HTML = """<!DOCTYPE html>
     _tlRecorder.ondataavailable = function(e) { if (e.data && e.data.size > 0) _tlChunks.push(e.data); };
     _tlRecorder.onstop = function() {
       if (!_tlChunks.length) {
-        document.getElementById('tlStatus').textContent = 'Не удалось записать кадры.';
+        document.getElementById('tlStatus').textContent = t('tl_no_frames');
         return;
       }
       const blob = new Blob(_tlChunks, { type: _tlMime || 'video/mp4' });
       const ext = (_tlMime && _tlMime.indexOf('mp4') !== -1) ? 'mp4' : 'webm';
-      document.getElementById('tlStatus').textContent = 'Сохранение таймлапса (' + _tlFrames + ' кадр.)...';
+      document.getElementById('tlStatus').textContent = t('tl_saving').replace('{n}', _tlFrames);
       const reader = new FileReader();
       reader.onloadend = function() {
         const res = String(reader.result || '');
         const comma = res.indexOf(',');
         const b64 = comma !== -1 ? res.slice(comma + 1) : '';
         if (!b64) {
-          document.getElementById('tlStatus').textContent = 'Ошибка кодирования таймлапса.';
+          document.getElementById('tlStatus').textContent = t('tl_encode_err');
           return;
         }
         send({ action: 'save_timelapse', ext: ext, frames: _tlFrames, data_b64: b64 });
@@ -1520,9 +1568,9 @@ _PAGE_HTML = """<!DOCTYPE html>
 
     if (_tlMode === 'layer') {
       _captureTimelapseFrame();
-      document.getElementById('tlStatus').textContent = 'Режим «По смене слоя»: ' + _tlFrames + ' кадр.';
+      document.getElementById('tlStatus').textContent = t('tl_layer_mode').replace('{n}', _tlFrames);
     } else if (_tlMode === 'park') {
-      document.getElementById('tlStatus').textContent = 'Ожидание парковки головы...';
+      document.getElementById('tlStatus').textContent = t('tl_park_wait');
       _tlTimer = setInterval(function() {
         if (!_tlRecorder || _tlRecorder.state === 'inactive') return;
         const motion = _frameMotionScore(vid);
@@ -1584,7 +1632,7 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
   async function connectKvsWebRtc(cfg) {
     stopCamera(true);
-    setCamUi(true, 'Подключение WebSocket к AWS KVS (' + (cfg.region || '') + ')...');
+    setCamUi(true, t('cam_ws_connecting').replace('{region}', cfg.region || ''));
     let gotAnswer = false;
     try {
       const pc = new RTCPeerConnection({ iceServers: cfg.ice_servers || [] });
@@ -1602,20 +1650,20 @@ _PAGE_HTML = """<!DOCTYPE html>
           };
           vid.play().catch(function(){});
           _camReconnectCount = 0;
-          setCamUi(true, 'Камера активна (' + (cfg.region || 'AWS KVS') + ')');
+          setCamUi(true, t('cam_active').replace('{region}', cfg.region || 'AWS KVS'));
         }
       };
       pc.oniceconnectionstatechange = function() {
         const st = pc.iceConnectionState;
         if (st === 'checking') {
-          setCamUi(true, 'Установка видеопотока (ICE checking)...');
+          setCamUi(true, t('cam_ice_checking'));
         } else if (st === 'failed' || st === 'disconnected') {
           if (_camReconnectCount < 2) {
             _camReconnectCount += 1;
-            setCamUi(true, 'Связь с камерой прервалась (' + st + '), переподключение (' + _camReconnectCount + '/2)...');
+            setCamUi(true, t('cam_dropped_retry').replace('{st}', st).replace('{n}', _camReconnectCount));
             _camRetryTimers.push(setTimeout(function() { startCamera(true); }, 2500));
           } else {
-            setCamUi(true, 'Соединение с камерой прервано (' + st + '). Нажмите «Выключить» и «Включить камеру».');
+            setCamUi(true, t('cam_dropped_final').replace('{st}', st));
           }
         }
       };
@@ -1631,14 +1679,14 @@ _PAGE_HTML = """<!DOCTYPE html>
       };
       function sendOffer(offerPayload, attempt) {
         if (gotAnswer || ws.readyState !== WebSocket.OPEN) return;
-        setCamUi(true, 'Ожидание ответа от принтера (попытка ' + attempt + '/3)...');
+        setCamUi(true, t('cam_waiting_printer').replace('{n}', attempt));
         ws.send(JSON.stringify({
           action: 'SDP_OFFER',
           messagePayload: offerPayload
         }));
       }
       ws.onopen = async function() {
-        setCamUi(true, 'WebSocket открыт, отправка SDP_OFFER...');
+        setCamUi(true, t('cam_ws_open'));
         const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false });
         await pc.setLocalDescription(offer);
         const encoded = btoa(JSON.stringify(pc.localDescription));
@@ -1657,7 +1705,7 @@ _PAGE_HTML = """<!DOCTYPE html>
           gotAnswer = true;
           _camRetryTimers.forEach(function(t) { clearTimeout(t); });
           _camRetryTimers = [];
-          setCamUi(true, 'Принтер ответил (SDP_ANSWER), запуск видео...');
+          setCamUi(true, t('cam_sdp_answer'));
           await pc.setRemoteDescription(new RTCSessionDescription(payload));
         } else if (msg.messageType === 'ICE_CANDIDATE') {
           await pc.addIceCandidate(new RTCIceCandidate(payload));
@@ -1665,16 +1713,16 @@ _PAGE_HTML = """<!DOCTYPE html>
       };
       ws.onclose = function(ev) {
         if (!gotAnswer) {
-          setCamUi(true, 'WebSocket закрыт (код ' + ev.code + (ev.reason ? ': ' + ev.reason : '') + ').');
+          setCamUi(true, t('cam_ws_closed').replace('{code}', ev.code).replace('{reason}', ev.reason ? (': ' + ev.reason) : ''));
         }
       };
       ws.onerror = function() {
         if (!gotAnswer) {
-          setCamUi(true, 'Ошибка WebSocket подключения к AWS KVS.');
+          setCamUi(true, t('cam_ws_error'));
         }
       };
     } catch (err) {
-      setCamUi(true, 'Ошибка WebRTC: ' + err);
+      setCamUi(true, t('cam_webrtc_error') + err);
     }
   }
   function formatEta(remainMin) {
@@ -1783,7 +1831,7 @@ _PAGE_HTML = """<!DOCTYPE html>
   }
   function saveManualToken() {
     const val = document.getElementById('manualToken').value.trim();
-    if (!val) { showBanner('err', 'Введите XX-Token.'); return; }
+    if (!val) { showBanner('err', t('enter_token')); return; }
     document.getElementById('manualToken').value = '';
     send({action: 'set_token', token: val});
   }
@@ -1947,14 +1995,14 @@ _PAGE_HTML = """<!DOCTYPE html>
     window.orca.onMessage(function(msg) {
       if (msg && msg.type === 'state') renderState(msg);
       else if (msg && msg.type === 'camera_session') connectKvsWebRtc(msg.session);
-      else if (msg && msg.type === 'camera_error') setCamUi(true, msg.error || 'Не удалось включить камеру.');
+      else if (msg && msg.type === 'camera_error') setCamUi(true, msg.error || t('cam_failed'));
       else if (msg && msg.type === 'upload_progress') {
         _uploadState = msg.active ? { active: true, pct: msg.pct || 0, text: msg.text || '' } : null;
         if (_lastState) renderMonitor(_lastState.printers || [], _lastState.config && _lastState.config.printer_id);
       }
       else if (msg && msg.type === 'timelapse_saved') {
-        document.getElementById('tlStatus').textContent = msg.text || 'Таймлапс сохранён.';
-        showBanner('ok', msg.text || 'Таймлапс сохранён.');
+        document.getElementById('tlStatus').textContent = msg.text || t('tl_saved_default');
+        showBanner('ok', msg.text || t('tl_saved_default'));
       }
     });
   }
