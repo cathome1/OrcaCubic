@@ -49,7 +49,11 @@ from orcacubic.config import (
     save_config,
 )
 from orcacubic.gcode_adapter import adapt_gcode_stream
-from orcacubic.login_helper import find_login_helper, launch_login_window, pick_folder_dialog
+from orcacubic.login_helper import (
+    get_required_process_grants,
+    launch_login_window,
+    pick_folder_dialog,
+)
 
 _DATA_DIR = _PLUGIN_DIR / "data"
 _CONFIG_FILE = _DATA_DIR / "config.json"
@@ -1800,6 +1804,7 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
                     token = launch_login_window(
                         reset_session=reset,
                         extra_search_dirs=[_PLUGIN_DIR],
+                        profile_dir=_DATA_DIR / "browser_login_profile",
                     )
                     cfg = load_config(path=_CONFIG_FILE)
                     cfg.token = token
@@ -2119,8 +2124,7 @@ class OrcaCubicPlugin(orca.base):
     """Main OrcaSlicer 2.5+ plugin entrypoint."""
 
     def register_capabilities(self) -> None:
-        helper_path = find_login_helper(extra_search_dirs=[_PLUGIN_DIR])
-        process_grants = [str(helper_path)] if helper_path else []
+        process_grants = get_required_process_grants(extra_search_dirs=[_PLUGIN_DIR])
 
         orca_data_dir = _PLUGIN_DIR.parent.parent
         temp_dir = Path(tempfile.gettempdir())
@@ -2142,7 +2146,9 @@ class OrcaCubicPlugin(orca.base):
                 "*.amazonaws.com",
                 "*.myqcloud.com",
                 "*.aliyuncs.com",
+                "127.0.0.1",
             ],
+            network_socket=["127.0.0.1"],
             process=process_grants,
             threading=True,
         )

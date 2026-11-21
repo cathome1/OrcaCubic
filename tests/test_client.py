@@ -418,5 +418,71 @@ class TestOrcaPluginRegistration(unittest.TestCase):
             self.assertIn("OrcaCubic", page.get_ui())
 
 
+class TestLoginHelperCDP(unittest.TestCase):
+    def test_cdp_eval_js_roundtrip(self) -> None:
+        import base64
+        import hashlib
+        import socket
+        import threading
+
+        from orcacubic.login_helper import _WS_GUID, _cdp_eval_js, _ws_recv_frame
+
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        captured_cmd: list[dict] = []
+
+        def _serve() -> None:
+            try:
+                conn, _ = srv.accept()
+                with conn:
+                    req = b""
+                    while b"\r\n\r\n" not in req:
+                        req += conn.recv(4096)
+                    ws_key = ""
+                    for line in req.decode("ascii").splitlines():
+                        if line.lower().startswith("sec-websocket-key:"):
+                            ws_key = line.split(":", 1)[1].strip()
+                    accept = base64.b64encode(
+                        hashlib.sha1((ws_key + _WS_GUID).encode("ascii")).digest()
+                    ).decode("ascii")
+                    conn.sendall(
+                        (
+                            "HTTP/1.1 101 Switching Protocols\r\n"
+                            "Upgrade: websocket\r\n"
+                            "Connection: Upgrade\r\n"
+                            f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+                        ).encode("ascii")
+                    )
+                    opcode, payload = _ws_recv_frame(conn)
+                    assert opcode == 0x1
+                    cmd = json.loads(payload.decode("utf-8"))
+                    captured_cmd.append(cmd)
+                    reply = json.dumps(
+                        {
+                            "id": cmd["id"],
+                            "result": {"result": {"type": "string", "value": "tok_win_12345"}},
+                        }
+                    ).encode("utf-8")
+                    # Unmasked server text frame
+                    conn.sendall(bytes([0x81, len(reply)]) + reply)
+            finally:
+                srv.close()
+
+        t = threading.Thread(target=_serve, daemon=True)
+        t.start()
+        try:
+            val = _cdp_eval_js(
+                f"ws://127.0.0.1:{port}/devtools/page/TEST",
+                "window.localStorage.getItem('XX-Token')",
+                timeout=3.0,
+            )
+            self.assertEqual(val, "tok_win_12345")
+            self.assertEqual(captured_cmd[0]["method"], "Runtime.evaluate")
+        finally:
+            t.join(timeout=2.0)
+
+
 if __name__ == "__main__":
     unittest.main()
