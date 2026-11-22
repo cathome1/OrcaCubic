@@ -2225,7 +2225,9 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
             return
 
         if action == "login_window":
-            reset = bool(data.get("reset_session", False))
+            # Always reset browser storage on explicit Sign in / Switch account so a stale
+            # expired XX-Token in localStorage can never be recaptured immediately.
+            reset = True
             self._emit_state(
                 info=self._tr(
                     "Anycubic Cloud sign-in window opened...",
