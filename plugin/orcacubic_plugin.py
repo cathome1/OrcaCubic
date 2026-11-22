@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.8"
+# version = "0.3.9"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -754,8 +754,11 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
                 else f"Файл загружен в Anycubic Cloud ({printer.name})"
             )
             report(100, action_text)
-            if _ACTIVE_PAGE is not None and not should_start_print:
-                _ACTIVE_PAGE.trigger_files_refresh(notice=action_text)
+            if _ACTIVE_PAGE is not None:
+                if should_start_print:
+                    _ACTIVE_PAGE.trigger_status_refresh(notice=action_text)
+                else:
+                    _ACTIVE_PAGE.trigger_files_refresh(notice=action_text)
             return ORCA_SUCCESS
         except AnycubicTokenExpiredError as exc:
             print(f"[OrcaCubic] Token expired: {exc}", file=sys.stderr, flush=True)
@@ -2017,10 +2020,16 @@ _PAGE_HTML = """<!DOCTYPE html>
     applyLanguage(_lang);
     send({action: 'init', detected_lang: _lang});
     setInterval(function() {
+      send({action: 'poll_status'});
+    }, 10000);
+    document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'visible') {
         send({action: 'poll_status'});
       }
-    }, 10000);
+    });
+    window.addEventListener('focus', function() {
+      send({action: 'poll_status'});
+    });
   });
 </script>
 </body>
@@ -2082,6 +2091,12 @@ class AnycubicCloudPage(orca.pages.PagesPluginCapabilityBase):
         if updated:
             self._updated_at = datetime.datetime.now().strftime("%H:%M:%S")
             self._emit_state()
+
+    def trigger_status_refresh(self, notice: str = "") -> None:
+        cfg = load_config(path=_CONFIG_FILE)
+        if not cfg.token:
+            return
+        self._run_bg(lambda: self._refresh_printers_sync(cfg, notice=notice))
 
     def trigger_files_refresh(self, notice: str = "") -> None:
         cfg = load_config(path=_CONFIG_FILE)
