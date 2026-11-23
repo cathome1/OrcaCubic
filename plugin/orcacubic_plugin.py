@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.3.9"
+# version = "0.4.0"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -990,6 +990,7 @@ _PAGE_HTML = """<!DOCTYPE html>
       <span id="monitorBadge" class="badge idle">Idle</span>
     </div>
     <div id="monitorFile" class="sub" data-i18n="no_active_job">Нет активного задания</div>
+    <div id="monitorLifetime" class="sub" style="margin-top:3px; font-size:12px;"></div>
     <div class="progress-track"><div id="monitorProgressBar" class="progress-fill"></div></div>
     <div class="stats-grid">
       <div class="stat-box">
@@ -1204,7 +1205,10 @@ _PAGE_HTML = """<!DOCTYPE html>
       tl_layer_mode: 'Layer-change mode: {n} frames',
       tl_park_wait: 'Waiting for head park...',
       tl_saved_default: 'Timelapse saved.',
-      enter_token: 'Enter XX-Token.'
+      enter_token: 'Enter XX-Token.',
+      life_total: 'Total: ',
+      life_filament: 'Filament: ',
+      life_prints: 'Prints: '
     },
     ru: {
       checking_status: 'Проверка состояния...',
@@ -1306,7 +1310,10 @@ _PAGE_HTML = """<!DOCTYPE html>
       tl_layer_mode: 'Режим «По смене слоя»: {n} кадр.',
       tl_park_wait: 'Ожидание парковки головы...',
       tl_saved_default: 'Таймлапс сохранён.',
-      enter_token: 'Введите XX-Token.'
+      enter_token: 'Введите XX-Token.',
+      life_total: 'Наработано: ',
+      life_filament: 'Пластик: ',
+      life_prints: 'Печатей: '
     }
   };
   let _lang = (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -1785,6 +1792,20 @@ _PAGE_HTML = """<!DOCTYPE html>
       : (p.current_file
           ? (t('file_prefix') + p.current_file)
           : (p.firmware_version ? (t('fw_prefix') + p.firmware_version) : t('no_active_job')));
+    const lifeParts = [];
+    if (p.total_print_time) {
+      const fmtTime = _lang === 'ru'
+        ? String(p.total_print_time).replace('hour', 'ч ').replace('min', 'м')
+        : String(p.total_print_time).replace('hour', 'h ').replace('min', 'm');
+      lifeParts.push(t('life_total') + fmtTime);
+    }
+    if (p.material_used) lifeParts.push(t('life_filament') + p.material_used);
+    if (p.print_count > 0) lifeParts.push(t('life_prints') + p.print_count);
+    const lifeEl = document.getElementById('monitorLifetime');
+    if (lifeEl) {
+      lifeEl.textContent = lifeParts.join(' · ');
+      lifeEl.style.display = lifeParts.length ? '' : 'none';
+    }
     const pct = (_uploadState && _uploadState.active)
       ? (_uploadState.pct || 0)
       : ((effStatus === 'printing' || effStatus === 'paused' || effStatus === 'downloading') ? (p.progress || 0) : 0);

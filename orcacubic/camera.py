@@ -14,7 +14,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from .auth import AnycubicError
-from .client import AnycubicCloudClient
+from .client import AnycubicCloudClient, build_ssl_context
 
 ORDER_ID_CAMERA_OPEN = 1001
 ORDER_ID_CAMERA_CLOSE = 1002
@@ -85,7 +85,7 @@ def _sigv4_post(
             "Authorization": auth_header,
         },
     )
-    ctx = ssl_context or ssl.create_default_context()
+    ctx = ssl_context or build_ssl_context()
     try:
         with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
             return json.loads(resp.read().decode("utf-8"))

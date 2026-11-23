@@ -70,6 +70,9 @@ class PrinterSummary:
     firmware_version: str = ""
     printer_key: str = ""
     machine_type: str = ""
+    total_print_time: str = ""
+    material_used: str = ""
+    print_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -92,6 +95,9 @@ class PrinterSummary:
             "firmware_version": self.firmware_version,
             "printer_key": self.printer_key,
             "machine_type": self.machine_type,
+            "total_print_time": self.total_print_time,
+            "material_used": self.material_used,
+            "print_count": self.print_count,
         }
 
 
@@ -294,6 +300,9 @@ def _normalize_printer(raw: Dict[str, Any]) -> PrinterSummary:
         firmware_version=firmware_version,
         printer_key=str(raw.get("key") or raw.get("printer_key") or "").strip(),
         machine_type=str(raw.get("machine_type") or "").strip(),
+        total_print_time=str(base_info.get("print_totaltime") or "").strip(),
+        material_used=str(base_info.get("material_used") or "").strip(),
+        print_count=_to_int(base_info.get("print_count"), 0),
     )
 
 
@@ -338,6 +347,39 @@ class _ChunkedFileReader:
         self._fp.close()
 
 
+def build_ssl_context() -> ssl.SSLContext:
+    """Create a verified SSLContext with fallback CA bundles for embedded Python (Windows/macOS/Linux)."""
+    ctx = ssl.create_default_context()
+    ca_candidates: List[str] = []
+    try:
+        import certifi  # type: ignore[import-not-found]
+
+        ca_candidates.append(certifi.where())
+    except Exception:
+        pass
+    try:
+        from pip._vendor import certifi as pip_certifi  # type: ignore[import-not-found]
+
+        ca_candidates.append(pip_certifi.where())
+    except Exception:
+        pass
+    ca_candidates.extend(
+        [
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/pki/tls/certs/ca-bundle.crt",
+        ]
+    )
+    for ca_file in ca_candidates:
+        if ca_file and Path(ca_file).is_file():
+            try:
+                ctx.load_verify_locations(cafile=ca_file)
+                break
+            except Exception:
+                continue
+    return ctx
+
+
 class AnycubicCloudClient:
     """Synchronous Anycubic Cloud REST client (stdlib only, zero dependencies)."""
 
@@ -351,7 +393,7 @@ class AnycubicCloudClient:
         self._auth = AnycubicAuth(token=token)
         self._api_root = api_root.rstrip("/")
         self._timeout = timeout
-        self._ssl_context = ssl_context or ssl.create_default_context()
+        self._ssl_context = ssl_context or build_ssl_context()
 
     def _request_json(
         self,
@@ -393,7 +435,7 @@ class AnycubicCloudClient:
             ) from exc
         except urllib.error.URLError as exc:
             raise AnycubicError(
-                f"Нет соединения с Anycubic Cloud: {exc.reason}"
+                f"Connection to Anycubic Cloud failed: {exc.reason}"
             ) from exc
 
         try:
