@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.4.1"
+# version = "0.4.2"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""

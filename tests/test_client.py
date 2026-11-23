@@ -585,6 +585,22 @@ class TestSSLContextAudit(unittest.TestCase):
         self.assertEqual(open_events, [])
         self.assertGreater(ctx1.cert_store_stats().get("x509_ca", 0), 0)
 
+    def test_bundled_root_cas_load_into_bare_context_without_open(self) -> None:
+        import ssl
+        from orcacubic.ca_bundle import BUNDLED_ROOT_CAS_PEM
+
+        open_events: list = []
+
+        def _hook(event: str, args: tuple) -> None:
+            if event == "open":
+                open_events.append(args[0])
+
+        sys.addaudithook(_hook)
+        bare_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        bare_ctx.load_verify_locations(cadata=BUNDLED_ROOT_CAS_PEM)
+        self.assertEqual(open_events, [])
+        self.assertGreaterEqual(bare_ctx.cert_store_stats().get("x509_ca", 0), 7)
+
 
 if __name__ == "__main__":
     unittest.main()

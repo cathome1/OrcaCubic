@@ -22,6 +22,7 @@ from .auth import (
     AnycubicTokenExpiredError,
     AnycubicUploadError,
 )
+from .ca_bundle import BUNDLED_ROOT_CAS_PEM
 
 ProgressCallback = Callable[[int, str], None]
 CancelCallback = Callable[[], bool]
@@ -366,6 +367,14 @@ def build_ssl_context() -> ssl.SSLContext:
         return _CACHED_SSL_CONTEXT
 
     ctx = ssl.create_default_context()
+    # Always load bundled public Mozilla NSS roots (Certum Trusted Network CA for
+    # *.anycubic.com, Amazon Root CA 1 for AWS KVS/S3, DigiCert, ISRG) in memory.
+    # Fixes Windows 10/11 where Certum isn't in ROOT store yet and embedded Python
+    # has no certifi, with zero open() audit events and full TLS verification.
+    try:
+        ctx.load_verify_locations(cadata=BUNDLED_ROOT_CAS_PEM)
+    except Exception:
+        pass
     ca_candidates: List[str] = []
     env_ca = os.environ.get("SSL_CERT_FILE")
     if env_ca:
