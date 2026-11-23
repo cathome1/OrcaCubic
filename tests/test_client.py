@@ -566,5 +566,25 @@ class TestMqttClient(unittest.TestCase):
         self.assertEqual(patch["remaining_time_min"], 35)
 
 
+class TestSSLContextAudit(unittest.TestCase):
+    def test_build_ssl_context_emits_no_open_audit_events(self) -> None:
+        import orcacubic.client as client_mod
+
+        client_mod._CACHED_SSL_CONTEXT = None
+        open_events: list = []
+
+        def _hook(event: str, args: tuple) -> None:
+            if event == "open":
+                open_events.append(args[0])
+
+        sys.addaudithook(_hook)
+        ctx1 = client_mod.build_ssl_context()
+        ctx2 = client_mod.build_ssl_context()
+
+        self.assertIs(ctx1, ctx2)
+        self.assertEqual(open_events, [])
+        self.assertGreater(ctx1.cert_store_stats().get("x509_ca", 0), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

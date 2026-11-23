@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -347,22 +348,34 @@ class _ChunkedFileReader:
         self._fp.close()
 
 
+_CACHED_SSL_CONTEXT: Optional[ssl.SSLContext] = None
+
+
 def build_ssl_context() -> ssl.SSLContext:
-    """Create a verified SSLContext with fallback CA bundles for embedded Python (Windows/macOS/Linux)."""
+    """Create a cached, verified SSLContext with fallback CA bundles for embedded Python.
+
+    IMPORTANT: Never ``import certifi`` or ``import pip`` here — importing ``pip``
+    inside OrcaSlicer's audited Python emits 30+ ``open()`` audit events for
+    ``.pyc`` files inside ``site-packages/pip``, triggering permission dialogs.
+    Instead we locate ``cacert.pem`` directly via ``sys.path`` and pass it to
+    OpenSSL's ``load_verify_locations(cafile=...)``, which emits zero Python
+    ``open`` audit events.
+    """
+    global _CACHED_SSL_CONTEXT
+    if _CACHED_SSL_CONTEXT is not None:
+        return _CACHED_SSL_CONTEXT
+
     ctx = ssl.create_default_context()
     ca_candidates: List[str] = []
-    try:
-        import certifi  # type: ignore[import-not-found]
-
-        ca_candidates.append(certifi.where())
-    except Exception:
-        pass
-    try:
-        from pip._vendor import certifi as pip_certifi  # type: ignore[import-not-found]
-
-        ca_candidates.append(pip_certifi.where())
-    except Exception:
-        pass
+    env_ca = os.environ.get("SSL_CERT_FILE")
+    if env_ca:
+        ca_candidates.append(env_ca)
+    for entry in sys.path:
+        if not entry:
+            continue
+        base = Path(entry)
+        ca_candidates.append(str(base / "certifi" / "cacert.pem"))
+        ca_candidates.append(str(base / "pip" / "_vendor" / "certifi" / "cacert.pem"))
     ca_candidates.extend(
         [
             "/etc/ssl/cert.pem",
@@ -377,6 +390,7 @@ def build_ssl_context() -> ssl.SSLContext:
                 break
             except Exception:
                 continue
+    _CACHED_SSL_CONTEXT = ctx
     return ctx
 
 
