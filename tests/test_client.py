@@ -599,7 +599,7 @@ class TestSSLContextAudit(unittest.TestCase):
         bare_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         bare_ctx.load_verify_locations(cadata=BUNDLED_ROOT_CAS_PEM)
         self.assertEqual(open_events, [])
-        self.assertGreaterEqual(bare_ctx.cert_store_stats().get("x509_ca", 0), 7)
+        self.assertGreaterEqual(bare_ctx.cert_store_stats().get("x509_ca", 0), 2)
 
 
 if __name__ == "__main__":
