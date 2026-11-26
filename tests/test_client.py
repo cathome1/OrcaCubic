@@ -103,7 +103,7 @@ class TestAuthAndConfig(unittest.TestCase):
             )
             token, msg = try_read_slicer_next_token(conf)
             self.assertIsNone(token)
-            self.assertIn("шифрует", msg)
+            self.assertIn("encrypts", msg)
 
 
 class TestAnycubicClient(unittest.TestCase):
@@ -600,6 +600,50 @@ class TestSSLContextAudit(unittest.TestCase):
         bare_ctx.load_verify_locations(cadata=BUNDLED_ROOT_CAS_PEM)
         self.assertEqual(open_events, [])
         self.assertGreaterEqual(bare_ctx.cert_store_stats().get("x509_ca", 0), 2)
+
+    def test_agora_camera_session_parsing_and_remote_disconnected(self) -> None:
+        import http.client
+        from orcacubic.auth import AnycubicError
+        from orcacubic.camera import open_camera_session
+
+        client = AnycubicCloudClient(token="tok_12345678901234567890")
+        responses = [
+            {"code": 1, "data": {"key": "printer-key-123"}},
+            {
+                "code": 1,
+                "data": {
+                    "shengwang": {
+                        "appid": "app123",
+                        "channel": "chan456",
+                        "rtc_token": "rtc_tok_789",
+                        "client_uid": 42,
+                        "encryption_mode": "AES_256_GCM2",
+                        "encryption_key": "secret-key",
+                        "encryption_kdf_salt": "c2FsdA==",
+                    },
+                    "shengwang_device": {"uid": 99},
+                },
+            },
+        ]
+        with mock.patch.object(client, "_request_json", side_effect=responses):
+            sess = open_camera_session(client, 12345)
+        self.assertEqual(sess["protocol"], "agora")
+        self.assertEqual(sess["app_id"], "app123")
+        self.assertEqual(sess["channel"], "chan456")
+        self.assertEqual(sess["token"], "rtc_tok_789")
+        self.assertEqual(sess["uid"], 42)
+        self.assertEqual(sess["device_uid"], 99)
+        self.assertEqual(sess["encryption_mode"], "aes-256-gcm2")
+        self.assertEqual(sess["encryption_key"], "secret-key")
+        self.assertEqual(sess["encryption_kdf_salt"], "c2FsdA==")
+
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=http.client.RemoteDisconnected("Remote end closed connection"),
+        ):
+            with self.assertRaises(AnycubicError) as ctx:
+                client.get_printers()
+        self.assertIn("interrupted", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":

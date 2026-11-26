@@ -93,13 +93,13 @@ def _sigv4_post(
         err_body = exc.read().decode("utf-8", errors="replace")
         if exc.code == 404 or "ResourceNotFound" in err_body:
             raise AnycubicError(
-                "Канал камеры не найден. Проверьте, что USB-камера подключена к принтеру."
+                "Camera channel not found. Make sure a USB camera is connected to the printer."
             ) from exc
         raise AnycubicError(
-            f"Ошибка AWS Kinesis Video (HTTP {exc.code})."
+            f"AWS Kinesis Video error (HTTP {exc.code})."
         ) from exc
     except urllib.error.URLError as exc:
-        raise AnycubicError(f"Нет связи с сервером видеопотока: {exc.reason}") from exc
+        raise AnycubicError(f"Failed to connect to camera stream server: {exc.reason}") from exc
 
 
 def build_kvs_presigned_wss_url(
@@ -155,12 +155,12 @@ def build_kvs_presigned_wss_url(
 
 
 def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[str, Any]:
-    """Open Anycubic Cloud camera and return WebRTC signaling URL + ICE servers."""
+    """Open Anycubic Cloud camera and return Agora RTC or AWS KVS WebRTC session parameters."""
     info = client._request_json("GET", "/v2/printer/info", query={"id": str(printer_id)})
     info_data = info.get("data") or {}
     printer_key = str(info_data.get("key") or "").strip()
     if not printer_key:
-        raise AnycubicError("Не удалось получить ключ принтера для подключения камеры.")
+        raise AnycubicError("Failed to get printer key for camera connection.")
 
     cam_resp = client._request_json(
         "POST",
@@ -172,17 +172,33 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
         },
     )
     cam_data = cam_resp.get("data") or {}
-    tok = cam_data.get("token")
-    if isinstance(cam_data.get("shengwang"), dict) or (
-        isinstance(tok, str) and (cam_data.get("app_id") or cam_data.get("appId") or cam_data.get("channel"))
-    ):
-        raise AnycubicError(
-            "This printer uses the Agora camera protocol (Kobra 3 / S1 newer firmware). "
-            "Printing, live MQTT telemetry, and print controls work normally; Agora live camera streaming is planned for a future update."
+    sw = cam_data.get("shengwang")
+    if isinstance(sw, dict) and sw.get("appid") and sw.get("channel") and sw.get("rtc_token"):
+        dev = cam_data.get("shengwang_device") or {}
+        enc_mode_raw = str(sw.get("encryption_mode") or "").strip()
+        web_enc_mode = (
+            enc_mode_raw.lower().replace("_", "-")
+            if enc_mode_raw and enc_mode_raw.lower() != "none"
+            else ""
         )
+        uid_raw = sw.get("client_uid")
+        dev_uid_raw = dev.get("uid", sw.get("uid")) if isinstance(dev, dict) else sw.get("uid")
+        return {
+            "protocol": "agora",
+            "app_id": str(sw["appid"]),
+            "channel": str(sw["channel"]),
+            "token": str(sw["rtc_token"]),
+            "uid": int(uid_raw) if uid_raw is not None else 0,
+            "device_uid": int(dev_uid_raw) if dev_uid_raw is not None else None,
+            "encryption_mode": web_enc_mode,
+            "encryption_key": str(sw.get("encryption_key") or ""),
+            "encryption_kdf_salt": str(sw.get("encryption_kdf_salt") or ""),
+        }
+
+    tok = cam_data.get("token")
     if not isinstance(tok, dict) or "tmpSecretId" not in tok:
         raise AnycubicError(
-            "Printer did not return an AWS KVS camera token (camera may be disconnected or using an unsupported protocol)."
+            "Printer did not return camera credentials (camera may be disconnected or busy in another app)."
         )
 
     region = str(tok.get("region") or "eu-central-1")
@@ -201,7 +217,7 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
     )
     channel_arn = str((desc.get("ChannelInfo") or {}).get("ChannelARN") or "")
     if not channel_arn:
-        raise AnycubicError("Не удалось получить ChannelARN камеры.")
+        raise AnycubicError("Failed to get camera ChannelARN from AWS Kinesis Video.")
 
     ep_resp = _sigv4_post(
         f"{kvs_base}/getSignalingChannelEndpoint",
@@ -225,7 +241,7 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
     wss_ep = endpoints.get("WSS")
     https_ep = endpoints.get("HTTPS")
     if not wss_ep or not https_ep:
-        raise AnycubicError("AWS Kinesis Video не вернул WSS/HTTPS эндпоинты.")
+        raise AnycubicError("AWS Kinesis Video did not return WSS/HTTPS endpoints.")
 
     ice_resp = _sigv4_post(
         f"{https_ep}/v1/get-ice-server-config",
@@ -258,6 +274,7 @@ def open_camera_session(client: AnycubicCloudClient, printer_id: int) -> Dict[st
         region=region,
     )
     return {
+        "protocol": "kvs",
         "wss_url": wss_url,
         "ice_servers": ice_servers,
         "client_id": client_id,

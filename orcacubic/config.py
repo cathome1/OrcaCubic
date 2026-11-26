@@ -112,27 +112,27 @@ def try_read_slicer_next_token(
     Returns (token_or_none, status_message).
     """
     if not conf_path.exists():
-        return None, "Конфиг Anycubic Slicer Next не найден."
+        return None, "Anycubic Slicer Next config not found."
 
     try:
         data = json.loads(conf_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None, "Не удалось прочитать AnycubicSlicerNext.conf."
+        return None, "Failed to read AnycubicSlicerNext.conf."
 
     cloud = data.get("anycubic_cloud")
     if not isinstance(cloud, dict):
-        return None, "Секция anycubic_cloud отсутствует в AnycubicSlicerNext.conf."
+        return None, "Section anycubic_cloud is missing in AnycubicSlicerNext.conf."
 
     plain_token = cloud.get("access_token") or cloud.get("token")
     if isinstance(plain_token, str) and plain_token.strip():
-        return plain_token.strip(), "Токен найден в AnycubicSlicerNext.conf."
+        return plain_token.strip(), "Token found in AnycubicSlicerNext.conf."
 
     # Modern Anycubic Slicer Next encrypts keys/values with AES (base64 keys ending in '==')
     if any(isinstance(k, str) and k.endswith("==") for k in cloud.keys()):
         return (
             None,
-            "Anycubic Slicer Next шифрует токен в AnycubicSlicerNext.conf. "
-            "Используйте кнопку «Войти в Anycubic Cloud» или вставьте XX-Token вручную.",
+            "Anycubic Slicer Next encrypts the token in AnycubicSlicerNext.conf. "
+            "Use the 'Sign in to Anycubic Cloud' button or paste XX-Token manually.",
         )
 
-    return None, "Токен в AnycubicSlicerNext.conf не найден."
+    return None, "Token not found in AnycubicSlicerNext.conf."

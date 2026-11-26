@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = ROOT / "dist"
-VERSION = "0.4.2"
+VERSION = "0.5.0"
 DIST_NAME = "orcacubic"
 WHEEL_FILENAME = f"{DIST_NAME}-{VERSION}-py3-none-any.whl"
 DIST_INFO = f"{DIST_NAME}-{VERSION}.dist-info"

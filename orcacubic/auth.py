@@ -64,7 +64,7 @@ class AnycubicAuth:
     def token(self) -> str:
         if not self._token:
             raise AnycubicAuthError(
-                "Токен Anycubic Cloud не задан. Войдите в аккаунт или укажите XX-Token."
+                "Anycubic Cloud token is not set. Sign in or paste your XX-Token."
             )
         return self._token
 

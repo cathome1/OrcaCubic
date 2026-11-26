@@ -274,11 +274,11 @@ def _launch_macos_helper(
         )
     except subprocess.TimeoutExpired as exc:
         raise AnycubicAuthError(
-            "Время ожидания входа в Anycubic Cloud истекло."
+            "Timed out waiting for Anycubic Cloud sign-in."
         ) from exc
     except OSError as exc:
         raise AnycubicAuthError(
-            f"Не удалось запустить окно авторизации: {exc}"
+            f"Failed to launch login window: {exc}"
         ) from exc
 
     for line in (proc.stdout or "").splitlines():
@@ -288,11 +288,10 @@ def _launch_macos_helper(
                 return token
 
     if proc.returncode == 2:
-        raise AnycubicAuthError("Окно входа закрыто до завершения авторизации.")
+        raise AnycubicAuthError("Login window was closed before sign-in completed.")
 
     raise AnycubicAuthError(
-        "Не удалось получить XX-Token из окна авторизации. Попробуйте ещё раз "
-        "или вставьте XX-Token вручную."
+        "Could not extract XX-Token from the login window. Please try again or paste XX-Token manually."
     )
 
 
@@ -439,8 +438,8 @@ def launch_login_window(
         )
 
     raise AnycubicAuthError(
-        "Не найдено окно входа (на macOS соберите anycubic-login-helper через scripts/install.py; "
-        "на Windows/Linux установите Microsoft Edge или Google Chrome) — либо вставьте XX-Token вручную."
+        "No supported login browser found (install Google Chrome, Microsoft Edge, or Chromium) "
+        "— or paste your XX-Token manually."
     )
 
 
@@ -484,7 +483,7 @@ def pick_folder_dialog(
     # Linux (zenity or kdialog)
     if shutil.which("zenity"):
         proc = subprocess.run(
-            ["zenity", "--file-selection", "--directory", "--title=Папка для таймлапсов"],
+            ["zenity", "--file-selection", "--directory", "--title=Timelapse Folder"],
             capture_output=True,
             text=True,
             timeout=300,

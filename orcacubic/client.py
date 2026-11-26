@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import ssl
@@ -332,7 +333,7 @@ class _ChunkedFileReader:
 
     def read(self, size: int = -1) -> bytes:
         if self._cancel_cb and self._cancel_cb():
-            raise AnycubicUploadError("Загрузка отменена пользователем.")
+            raise AnycubicUploadError("Upload cancelled by user.")
         to_read = self._chunk_size if size is None or size < 0 else min(size, self._chunk_size)
         chunk = self._fp.read(to_read)
         if chunk:
@@ -342,7 +343,7 @@ class _ChunkedFileReader:
                 pct = 15 + int((self._sent / self._total) * 70)
                 if pct != self._last_pct:
                     self._last_pct = pct
-                    self._progress_cb(pct, f"Загрузка в Anycubic Cloud ({int(self._sent * 100 / self._total)}%)...")
+                    self._progress_cb(pct, f"Uploading to Anycubic Cloud ({int(self._sent * 100 / self._total)}%)...")
         return chunk
 
     def close(self) -> None:
@@ -450,26 +451,29 @@ class AnycubicCloudClient:
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
                 raise AnycubicTokenExpiredError(
-                    "Срок действия токена Anycubic Cloud истёк (HTTP "
-                    f"{exc.code}). Войдите в аккаунт повторно."
+                    f"Anycubic Cloud token expired (HTTP {exc.code}). Please sign in again."
                 ) from exc
             raise AnycubicError(
-                f"Ошибка HTTP {exc.code} при обращении к Anycubic Cloud ({endpoint})."
+                f"HTTP {exc.code} error calling Anycubic Cloud ({endpoint})."
             ) from exc
         except urllib.error.URLError as exc:
             raise AnycubicError(
                 f"Connection to Anycubic Cloud failed: {exc.reason}"
+            ) from exc
+        except (http.client.HTTPException, TimeoutError, OSError) as exc:
+            raise AnycubicError(
+                f"Connection to Anycubic Cloud interrupted: {exc}"
             ) from exc
 
         try:
             parsed = json.loads(raw_text)
         except ValueError as exc:
             raise AnycubicError(
-                f"Некорректный JSON-ответ от Anycubic Cloud ({endpoint})."
+                f"Invalid JSON response from Anycubic Cloud ({endpoint})."
             ) from exc
 
         if not isinstance(parsed, dict):
-            raise AnycubicError("Неожиданный формат ответа Anycubic Cloud.")
+            raise AnycubicError("Unexpected response format from Anycubic Cloud.")
 
         code = parsed.get("code")
         msg = str(parsed.get("msg") or parsed.get("message") or "")
@@ -479,13 +483,12 @@ class AnycubicCloudClient:
             kw in msg_lower for kw in ("token", "unauthorized", "login", "expired", "auth")
         ) and code not in (1, 0, None):
             raise AnycubicTokenExpiredError(
-                "Токен Anycubic Cloud недействителен или истёк "
-                f"(code={code}, msg={msg!r}). Войдите заново."
+                f"Anycubic Cloud token is invalid or expired (code={code}, msg={msg!r}). Please sign in again."
             )
 
         if code is not None and code != 1:
             raise AnycubicError(
-                f"Anycubic Cloud вернул ошибку (code={code}): {msg or 'без описания'}"
+                f"Anycubic Cloud returned an error (code={code}): {msg or 'no description'}"
             )
 
         return parsed
@@ -496,7 +499,7 @@ class AnycubicCloudClient:
         data = resp.get("data")
         if not isinstance(data, dict):
             raise AnycubicTokenExpiredError(
-                "Токен Anycubic Cloud истёк или отклонён сервером. Войдите повторно."
+                "Anycubic Cloud token expired or rejected by server. Please sign in again."
             )
         return {
             "id": data.get("id"),
@@ -517,7 +520,7 @@ class AnycubicCloudClient:
         resp = self._request_json("GET", EP_PRINTER_INFO, query={"id": str(printer_id)})
         data = resp.get("data")
         if not isinstance(data, dict):
-            raise AnycubicError(f"Принтер #{printer_id} не найден в Anycubic Cloud.")
+            raise AnycubicError(f"Printer #{printer_id} not found in Anycubic Cloud.")
         return _normalize_printer(data)
 
     def get_printers_with_live_status(self) -> List[PrinterSummary]:
@@ -572,15 +575,19 @@ class AnycubicCloudClient:
             ) as resp:
                 if resp.status not in (200, 201, 204):
                     raise AnycubicUploadError(
-                        f"Хранилище Anycubic вернуло HTTP {resp.status} при загрузке файла."
+                        f"Anycubic storage returned HTTP {resp.status} during file upload."
                     )
         except urllib.error.HTTPError as exc:
             raise AnycubicUploadError(
-                f"Ошибка загрузки файла в облачное хранилище (HTTP {exc.code})."
+                f"Cloud storage upload error (HTTP {exc.code})."
             ) from exc
         except urllib.error.URLError as exc:
             raise AnycubicUploadError(
-                f"Сбой сети при загрузке файла в облачное хранилище: {exc.reason}"
+                f"Network error during cloud storage upload: {exc.reason}"
+            ) from exc
+        except (http.client.HTTPException, TimeoutError, OSError) as exc:
+            raise AnycubicUploadError(
+                f"Connection interrupted during cloud storage upload: {exc}"
             ) from exc
         finally:
             reader.close()
@@ -596,18 +603,18 @@ class AnycubicCloudClient:
         """Upload a .gcode file to Anycubic Cloud and return its cloud file_id."""
         path = Path(file_path)
         if not path.is_file():
-            raise AnycubicUploadError(f"Файл не найден: {path}")
+            raise AnycubicUploadError(f"File not found: {path}")
 
         file_size = path.stat().st_size
         if file_size <= 0:
-            raise AnycubicUploadError("Нельзя загрузить пустой G-code файл.")
+            raise AnycubicUploadError("Cannot upload an empty G-code file.")
 
         name = (remote_name or path.name).strip()
         if not name.lower().endswith(".gcode"):
             name = f"{name}.gcode"
 
         if progress_cb:
-            progress_cb(5, "Резервирование места в Anycubic Cloud...")
+            progress_cb(5, "Reserving space in Anycubic Cloud...")
 
         lock_resp = self._request_json(
             "POST",
@@ -619,12 +626,12 @@ class AnycubicCloudClient:
         presigned_url = lock_data.get("preSignUrl")
         if not lock_id or not presigned_url:
             raise AnycubicUploadError(
-                "Anycubic Cloud не вернул ссылку для загрузки файла (lockStorageSpace)."
+                "Anycubic Cloud did not return an upload URL (lockStorageSpace)."
             )
 
         try:
             if progress_cb:
-                progress_cb(15, "Загрузка G-code в Anycubic Cloud...")
+                progress_cb(15, "Uploading G-code to Anycubic Cloud...")
             self._put_presigned(
                 presigned_url=str(presigned_url),
                 file_path=path,
@@ -634,7 +641,7 @@ class AnycubicCloudClient:
             )
 
             if progress_cb:
-                progress_cb(90, "Регистрация файла в облачной библиотеке...")
+                progress_cb(90, "Registering file in cloud library...")
 
             claim_resp = self._request_json(
                 "POST",
@@ -645,7 +652,7 @@ class AnycubicCloudClient:
             file_id = claim_data.get("id")
             if not file_id:
                 raise AnycubicUploadError(
-                    "Не удалось подтвердить загрузку файла (newUploadFile)."
+                    "Failed to confirm file upload (newUploadFile)."
                 )
             return int(file_id)
         except Exception:
@@ -755,7 +762,7 @@ class AnycubicCloudClient:
     def _upload_bytes_temp(self, data: bytes, remote_name: str) -> int:
         """Upload raw .gcode bytes as a temporary print job (is_temp_file=1)."""
         if not data:
-            raise AnycubicUploadError("Пустой файл G-code.")
+            raise AnycubicUploadError("Empty G-code file.")
         name = remote_name.strip() or "print.gcode"
         if not name.lower().endswith(".gcode"):
             name = f"{name}.gcode"
@@ -769,7 +776,7 @@ class AnycubicCloudClient:
         lock_id = lock_data.get("id")
         presigned_url = lock_data.get("preSignUrl")
         if not lock_id or not presigned_url:
-            raise AnycubicUploadError("Anycubic Cloud не вернул ссылку для загрузки файла.")
+            raise AnycubicUploadError("Anycubic Cloud did not return an upload URL.")
 
         try:
             req = urllib.request.Request(
@@ -782,7 +789,7 @@ class AnycubicCloudClient:
                 req, timeout=max(120, self._timeout), context=self._ssl_context
             ) as resp:
                 if resp.status not in (200, 201, 204):
-                    raise AnycubicUploadError(f"Ошибка загрузки в хранилище (HTTP {resp.status}).")
+                    raise AnycubicUploadError(f"Cloud storage upload error (HTTP {resp.status}).")
             claim_resp = self._request_json(
                 "POST",
                 EP_NEW_UPLOAD_FILE,
@@ -791,7 +798,7 @@ class AnycubicCloudClient:
             claim_data = claim_resp.get("data") or {}
             fid = claim_data.get("id")
             if not fid:
-                raise AnycubicUploadError("Не удалось подтвердить загрузку файла (newUploadFile).")
+                raise AnycubicUploadError("Failed to confirm file upload (newUploadFile).")
             return int(fid)
         except Exception:
             self._unlock_storage_space(int(lock_id), delete_cos=True)
@@ -826,7 +833,7 @@ class AnycubicCloudClient:
                     break
         if not file_url:
             raise AnycubicError(
-                "Не удалось получить ссылку на облачный файл для запуска печати."
+                "Failed to get cloud file download URL to start printing."
             )
 
         try:
@@ -837,7 +844,7 @@ class AnycubicCloudClient:
                 raw_bytes = resp.read()
         except Exception as exc:
             raise AnycubicError(
-                f"Не удалось скачать файл из облака для запуска печати: {exc}"
+                f"Failed to download cloud file for printing: {exc}"
             ) from exc
 
         temp_fid = self._upload_bytes_temp(raw_bytes, remote_name=file_name)
@@ -987,7 +994,7 @@ class AnycubicCloudClient:
         }
         if start_print:
             if progress_cb:
-                progress_cb(95, "Запуск печати на принтере...")
+                progress_cb(95, "Starting print on printer...")
             last_err: Optional[Exception] = None
             for attempt in range(3):
                 try:
@@ -1013,5 +1020,5 @@ class AnycubicCloudClient:
             if last_err is not None:
                 raise last_err
         if progress_cb:
-            progress_cb(100, "Готово!")
+            progress_cb(100, "Done!")
         return result

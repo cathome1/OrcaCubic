@@ -7,7 +7,7 @@
 # name = "OrcaCubic (Anycubic Cloud)"
 # description = "Remote printing, live dashboard, WebRTC camera & timelapses for Anycubic Cloud FDM printers"
 # author = "cathome1"
-# version = "0.4.2"
+# version = "0.5.0"
 # ///
 
 """OrcaSlicer 2.5+ plugin for Anycubic Cloud (all Anycubic Cloud FDM printers)."""
@@ -92,7 +92,7 @@ def _resolve_target_printer(
 ) -> PrinterSummary:
     printers = client.get_printers()
     if not printers:
-        raise AnycubicError("В аккаунте Anycubic Cloud не найдено ни одного принтера.")
+        raise AnycubicError("No printers found in your Anycubic Cloud account.")
 
     if cfg.printer_id is not None:
         for p in printers:
@@ -124,7 +124,7 @@ def _extract_gcode_path(params: Any) -> Tuple[Path, Optional[Path]]:
                 break
     if src_path is None:
         raise AnycubicError(
-            "OrcaSlicer не передал путь к нарезанному .gcode файлу (PrintParams.filename)."
+            "OrcaSlicer did not provide a sliced .gcode path (PrintParams.filename)."
         )
 
     model_name = (
@@ -141,7 +141,7 @@ def _extract_gcode_path(params: Any) -> Tuple[Path, Optional[Path]]:
             ]
             if not gcode_entries:
                 raise AnycubicError(
-                    f"Архив {src_path.name} не содержит .gcode внутри."
+                    f"Archive {src_path.name} does not contain a .gcode file."
                 )
             chosen = next(
                 (n for n in gcode_entries if "plate_1" in n.lower()),
@@ -702,7 +702,7 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
         if not cfg.token:
             report(
                 0,
-                "Требуется вход в Anycubic Cloud (откройте вкладку OrcaCubic).",
+                "Anycubic Cloud sign-in required (open the OrcaCubic tab).",
             )
             return ORCA_ERROR_AUTH
 
@@ -725,7 +725,7 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
             )
             client = AnycubicCloudClient(token=cfg.token)
 
-            report(2, "Поиск принтера в Anycubic Cloud...")
+            report(2, "Finding printer in Anycubic Cloud...")
             param_dev_id = getattr(params, "dev_id", "")
             if isinstance(param_dev_id, str) and param_dev_id.strip().isdigit():
                 cfg.printer_id = int(param_dev_id.strip())
@@ -749,9 +749,9 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
                 flush=True,
             )
             action_text = (
-                f"Печать запущена на {printer.name}"
+                f"Print started on {printer.name}"
                 if should_start_print
-                else f"Файл загружен в Anycubic Cloud ({printer.name})"
+                else f"File uploaded to Anycubic Cloud ({printer.name})"
             )
             report(100, action_text)
             if _ACTIVE_PAGE is not None:
@@ -772,12 +772,12 @@ class AnycubicPrinterAgent(orca.printer_agent.PrinterAgentBase):
             msg = str(exc)
             print(f"[OrcaCubic] Cloud error: {msg}", file=sys.stderr, flush=True)
             report(0, msg)
-            if "отменена" in msg.lower():
+            if "cancelled" in msg.lower() or "canceled" in msg.lower() or "отменена" in msg.lower():
                 return ORCA_ERROR_CANCELLED
             return ORCA_ERROR_GENERIC
         except Exception as exc:
             print(f"[OrcaCubic] Unexpected error: {exc!r}", file=sys.stderr, flush=True)
-            report(0, f"Неожиданная ошибка OrcaCubic: {exc}")
+            report(0, f"Unexpected OrcaCubic error: {exc}")
             return ORCA_ERROR_GENERIC
         finally:
             if _ACTIVE_PAGE is not None:
@@ -1632,10 +1632,116 @@ _PAGE_HTML = """<!DOCTYPE html>
     const val = (document.getElementById('tlDirInput').value || '').trim();
     send({action: 'set_timelapse_dir', path: val});
   }
+  let _agoraClient = null;
+  let _agoraSdkPromise = null;
+  function loadAgoraSdk() {
+    if (window.AgoraRTC) return Promise.resolve(window.AgoraRTC);
+    if (_agoraSdkPromise) return _agoraSdkPromise;
+    _agoraSdkPromise = new Promise(function(resolve, reject) {
+      const s = document.createElement('script');
+      s.src = 'https://download.agora.io/sdk/release/AgoraRTC_N-4.24.10.js';
+      s.integrity = 'sha384-Fryxcc/iPzIxW4hBocNoKhgrAirY/sADbjunHrckZ2n33q76zjpXZz6tv0qy9Jsc';
+      s.crossOrigin = 'anonymous';
+      s.async = true;
+      s.onload = function() {
+        if (window.AgoraRTC) resolve(window.AgoraRTC);
+        else { _agoraSdkPromise = null; reject(new Error('AgoraRTC global missing')); }
+      };
+      s.onerror = function() {
+        _agoraSdkPromise = null;
+        reject(new Error('Failed to load Agora Web SDK from download.agora.io'));
+      };
+      document.head.appendChild(s);
+    });
+    return _agoraSdkPromise;
+  }
+  async function connectAgoraCamera(cfg) {
+    stopCamera(true);
+    setCamUi(true, t('cam_ws_connecting').replace('{region}', 'Agora RTC'));
+    try {
+      const AgoraRTC = await loadAgoraSdk();
+      try { AgoraRTC.setLogLevel(3); } catch (e) {}
+      const client = AgoraRTC.createClient({ mode: 'live', codec: 'h264' });
+      _agoraClient = client;
+      await client.setClientRole('audience');
+      if (cfg.encryption_mode && cfg.encryption_key) {
+        if (cfg.encryption_kdf_salt) {
+          const bin = atob(cfg.encryption_kdf_salt);
+          const saltBytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) saltBytes[i] = bin.charCodeAt(i);
+          client.setEncryptionConfig(cfg.encryption_mode, cfg.encryption_key, saltBytes);
+        } else {
+          client.setEncryptionConfig(cfg.encryption_mode, cfg.encryption_key);
+        }
+      }
+      function attachVideoTrack(track) {
+        const vid = document.getElementById('camVideo');
+        if (!vid || !track) return;
+        const msTrack = typeof track.getMediaStreamTrack === 'function' ? track.getMediaStreamTrack() : null;
+        if (msTrack) {
+          vid.muted = true;
+          vid.playsInline = true;
+          vid.srcObject = new MediaStream([msTrack]);
+          vid.onloadedmetadata = function() { vid.play().catch(function(){}); };
+          vid.play().catch(function(){});
+        } else if (typeof track.play === 'function') {
+          track.play(vid);
+        }
+        _camReconnectCount = 0;
+        setCamUi(true, t('cam_active').replace('{region}', 'Agora RTC'));
+      }
+      client.on('user-published', async function(user, mediaType) {
+        try {
+          await client.subscribe(user, mediaType);
+          if (mediaType === 'video' && user.videoTrack) {
+            attachVideoTrack(user.videoTrack);
+          }
+        } catch (e) {
+          setCamUi(true, 'Agora subscribe error: ' + (e && e.message ? e.message : e));
+        }
+      });
+      client.on('user-unpublished', function(user, mediaType) {
+        if (mediaType === 'video') {
+          setCamUi(true, t('cam_waiting_printer').replace('{n}', '1'));
+        }
+      });
+      client.on('crypt-error', function() {
+        setCamUi(true, 'Agora encryption error (key/salt mismatch)');
+      });
+      client.on('connection-state-change', function(curState) {
+        if (curState === 'DISCONNECTED' && _agoraClient === client) {
+          if (_camReconnectCount < 2) {
+            _camReconnectCount += 1;
+            setCamUi(true, t('cam_dropped_retry').replace('{st}', curState).replace('{n}', _camReconnectCount));
+            _camRetryTimers.push(setTimeout(function() { startCamera(true); }, 2500));
+          } else {
+            setCamUi(true, t('cam_dropped_final').replace('{st}', curState));
+          }
+        }
+      });
+      setCamUi(true, t('cam_waiting_printer').replace('{n}', '1'));
+      await client.join(cfg.app_id, cfg.channel, cfg.token || null, cfg.uid || null);
+      if (client.remoteUsers && client.remoteUsers.length) {
+        for (let i = 0; i < client.remoteUsers.length; i++) {
+          const u = client.remoteUsers[i];
+          if (u.hasVideo) {
+            await client.subscribe(u, 'video');
+            if (u.videoTrack) attachVideoTrack(u.videoTrack);
+          }
+        }
+      }
+    } catch (e) {
+      setCamUi(true, 'Agora camera error: ' + (e && e.message ? e.message : e));
+    }
+  }
   function stopCamera(silent) {
     stopTimelapse();
     _camRetryTimers.forEach(function(t) { clearTimeout(t); });
     _camRetryTimers = [];
+    if (_agoraClient) {
+      try { _agoraClient.removeAllListeners(); _agoraClient.leave().catch(function(){}); } catch (e) {}
+      _agoraClient = null;
+    }
     if (_camWs) { try { _camWs.close(); } catch (e) {} _camWs = null; }
     if (_camPc) { try { _camPc.close(); } catch (e) {} _camPc = null; }
     const vid = document.getElementById('camVideo');
@@ -2025,7 +2131,10 @@ _PAGE_HTML = """<!DOCTYPE html>
   if (window.orca && typeof window.orca.onMessage === 'function') {
     window.orca.onMessage(function(msg) {
       if (msg && msg.type === 'state') renderState(msg);
-      else if (msg && msg.type === 'camera_session') connectKvsWebRtc(msg.session);
+      else if (msg && msg.type === 'camera_session') {
+        if (msg.session && msg.session.protocol === 'agora') connectAgoraCamera(msg.session);
+        else connectKvsWebRtc(msg.session);
+      }
       else if (msg && msg.type === 'camera_error') setCamUi(true, msg.error || t('cam_failed'));
       else if (msg && msg.type === 'upload_progress') {
         _uploadState = msg.active ? { active: true, pct: msg.pct || 0, text: msg.text || '' } : null;
